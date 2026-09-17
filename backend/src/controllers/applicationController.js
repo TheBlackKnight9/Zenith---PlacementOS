@@ -313,15 +313,16 @@ export async function getTpoApplications(req, res, next) {
 
     if (search && search.trim()) {
       const q = search.trim();
-      where.student = {
-        ...(where.student || {}),
-        OR: [
-          { rollNumber: { contains: q, mode: 'insensitive' } },
-          { firstName: { contains: q, mode: 'insensitive' } },
-          { lastName: { contains: q, mode: 'insensitive' } },
-          { user: { email: { contains: q, mode: 'insensitive' } } }
-        ]
-      };
+      where.OR = [
+        { student: { rollNumber: { contains: q, mode: 'insensitive' } } },
+        { student: { firstName: { contains: q, mode: 'insensitive' } } },
+        { student: { lastName: { contains: q, mode: 'insensitive' } } },
+        { student: { user: { email: { contains: q, mode: 'insensitive' } } } },
+        { drive: { companyName: { contains: q, mode: 'insensitive' } } },
+        { internship: { companyName: { contains: q, mode: 'insensitive' } } },
+        { drive: { jobRole: { contains: q, mode: 'insensitive' } } },
+        { internship: { roleTitle: { contains: q, mode: 'insensitive' } } }
+      ];
     }
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -337,7 +338,7 @@ export async function getTpoApplications(req, res, next) {
         orderBy: { appliedAt: 'desc' },
         include: {
           drive: {
-            select: { id: true, companyName: true, jobRole: true, packageCtc: true }
+            select: { id: true, companyName: true, jobRole: true, packageCtc: true, selectionProcess: true }
           },
           internship: {
             select: { id: true, companyName: true, roleTitle: true, stipendAmount: true }
@@ -355,7 +356,7 @@ export async function getTpoApplications(req, res, next) {
             }
           },
           interviews: {
-            select: { id: true, roundNumber: true, roundName: true, scheduledAt: true, status: true }
+            select: { id: true, roundNumber: true, roundName: true, scheduledAt: true, status: true, internalFeedback: true }
           },
           selectionResult: true
         }
@@ -365,9 +366,26 @@ export async function getTpoApplications(req, res, next) {
     const formatted = applications.map(app => {
       const fullName = `${app.student.firstName} ${app.student.lastName || ''}`.trim();
 
+      const defaultSelectionProcess = [
+        { step: 1, name: 'Resume Shortlisting', description: 'Initial resume and academic screening' },
+        { step: 2, name: 'Online Test', description: 'Aptitude, problem-solving & coding assessment' },
+        { step: 3, name: 'Technical Interview', description: 'In-depth domain & system design interview' },
+        { step: 4, name: 'HR Interview', description: 'Culture fit, behavioral & offer discussion' }
+      ];
+
+      const selectionProcess = app.drive?.selectionProcess && Array.isArray(app.drive.selectionProcess) && app.drive.selectionProcess.length > 0
+        ? app.drive.selectionProcess
+        : defaultSelectionProcess;
+
+      const currentStep = app.currentStep || 1;
+      const stepStatus = app.stepStatus || (app.status === 'SELECTED' ? 'CLEARED' : app.status === 'REJECTED' ? 'ELIMINATED' : 'IN_PROGRESS');
+
       return {
         id: app.id,
         status: app.status,
+        currentStep,
+        stepStatus,
+        selectionProcess,
         internalRemarks: app.internalRemarks,
         studentRemarks: app.studentRemarks,
         appliedAt: app.appliedAt,
@@ -415,7 +433,13 @@ export async function getTpoApplications(req, res, next) {
 export async function updateApplicationStatus(req, res, next) {
   try {
     const { id } = req.params;
-    const { status, internalRemarks, studentRemarks } = req.body;
+    const {
+      status,
+      internalRemarks,
+      studentRemarks,
+      currentStep,
+      stepStatus
+    } = req.body;
 
     const validStatuses = [
       'APPLIED',
@@ -434,7 +458,8 @@ export async function updateApplicationStatus(req, res, next) {
     }
 
     const application = await prisma.application.findUnique({
-      where: { id }
+      where: { id },
+      include: { drive: true }
     });
 
     if (!application) {
@@ -443,6 +468,16 @@ export async function updateApplicationStatus(req, res, next) {
 
     const updateData = {};
     if (status) updateData.status = status;
+    if (currentStep !== undefined) updateData.currentStep = parseInt(currentStep, 10);
+    if (stepStatus !== undefined) updateData.stepStatus = stepStatus;
+
+    // Automatic synchronization of application status with step status
+    if (stepStatus === 'ELIMINATED') {
+      updateData.status = 'REJECTED';
+    } else if (stepStatus === 'CLEARED' && status === 'SELECTED') {
+      updateData.status = 'SELECTED';
+    }
+
     if (internalRemarks !== undefined) updateData.internalRemarks = internalRemarks ? internalRemarks.trim() : null;
     if (studentRemarks !== undefined) updateData.studentRemarks = studentRemarks ? studentRemarks.trim() : null;
 
@@ -452,7 +487,7 @@ export async function updateApplicationStatus(req, res, next) {
     });
 
     // If candidate was SELECTED on a placement drive, automatically update student placementStatus
-    if (status === 'SELECTED' && application.driveId) {
+    if (updated.status === 'SELECTED' && application.driveId) {
       await prisma.student.update({
         where: { id: application.studentId },
         data: { placementStatus: true }
@@ -463,6 +498,8 @@ export async function updateApplicationStatus(req, res, next) {
       application: {
         id: updated.id,
         status: updated.status,
+        currentStep: updated.currentStep,
+        stepStatus: updated.stepStatus,
         internalRemarks: updated.internalRemarks,
         studentRemarks: updated.studentRemarks,
         updatedAt: updated.updatedAt

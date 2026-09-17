@@ -24,7 +24,10 @@ import {
   Clock,
   Layers,
   Sparkles,
-  ListChecks
+  ListChecks,
+  CheckCircle2,
+  Activity,
+  TrendingUp
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api-client";
@@ -485,75 +488,170 @@ export default function PlacementDrivesPage() {
   const totalApplicants = drives.reduce((sum, d) => sum + (d.applicantCount || 0), 0);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Placement Drives</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage ongoing and upcoming company drives.</p>
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button variant="outline" size="sm" onClick={fetchDrives} disabled={loading} className="w-full sm:w-auto">
-            <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-            Refresh
+    <div className="space-y-5 max-w-7xl mx-auto pb-16">
+      {/* ─── Error Alert Banner (if any) ─── */}
+      {error && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-center justify-between text-destructive text-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchDrives}
+            className="border-destructive/40 text-destructive hover:bg-destructive/20 h-8"
+          >
+            Retry
           </Button>
-          <Button size="sm" onClick={openAddDialog} className="w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Publish Drive
-          </Button>
         </div>
+      )}
+
+      {/* ─── 1. Executive Metric Strip (4 Cards) ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Placement Drives */}
+        <Card className="border-border bg-card shadow-xs transition-shadow">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Drives
+              </span>
+              <div className="h-8.5 w-8.5 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+                <Briefcase className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2 pt-0.5">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                {totalDrives}
+              </span>
+              <span className="text-xs text-muted-foreground font-medium">
+                Campaigns
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5 pt-2 border-t border-border/40">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              <span>{activeDrives} active & published drives</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Active Drives */}
+        <Card className="border-border bg-card shadow-xs transition-shadow">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Active Drives
+              </span>
+              <div className="h-8.5 w-8.5 rounded-lg bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+                <Power className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2 pt-0.5">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                {activeDrives}
+              </span>
+              <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                Accepting
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5 pt-2 border-t border-border/40">
+              <Activity className="h-3.5 w-3.5 text-emerald-500" />
+              <span>Open for student applications</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Upcoming Drives */}
+        <Card className="border-border bg-card shadow-xs transition-shadow">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Upcoming Drives
+              </span>
+              <div className="h-8.5 w-8.5 rounded-lg bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center">
+                <CalendarDays className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2 pt-0.5">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                {upcomingDrives}
+              </span>
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                Pipeline
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5 pt-2 border-t border-border/40">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground/70" />
+              <span>Scheduled recruitment rounds</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Applicants */}
+        <Card className="border-border bg-card shadow-xs transition-shadow">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Applicants
+              </span>
+              <div className="h-8.5 w-8.5 rounded-lg bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
+                <Users className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2 pt-0.5">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                {totalApplicants}
+              </span>
+              <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                Submissions
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5 pt-2 border-t border-border/40">
+              <GraduationCap className="h-3.5 w-3.5 text-muted-foreground/70" />
+              <span>Cumulative student registrations</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Stats Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-border bg-card shadow-xs">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Total Drives</p>
-              <p className="text-2xl font-bold text-foreground">{totalDrives}</p>
-            </div>
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Briefcase className="h-5 w-5 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border bg-card shadow-xs">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Active</p>
-              <p className="text-2xl font-bold text-foreground">{activeDrives}</p>
-            </div>
-            <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-              <Power className="h-5 w-5 text-emerald-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border bg-card shadow-xs">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Upcoming</p>
-              <p className="text-2xl font-bold text-foreground">{upcomingDrives}</p>
-            </div>
-            <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center">
-              <CalendarDays className="h-5 w-5 text-amber-500" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border bg-card shadow-xs">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Total Applicants</p>
-              <p className="text-2xl font-bold text-foreground">{totalApplicants}</p>
-            </div>
-            <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-              <Users className="h-5 w-5 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* ─── 2. Placement Drives Section & Controls ─── */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Drive Schedules & Applications</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Manage ongoing and upcoming company recruitment drives, eligibility criteria, and applicants.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
+              {drives.length} Drives Listed
+            </span>
 
-      {/* Drives Table */}
-      <Card className="border-border shadow-xs overflow-hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchDrives}
+              disabled={loading}
+              className="h-8 px-3 text-xs gap-1.5 border-input bg-background hover:bg-muted text-foreground font-medium shrink-0"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin text-primary")} />
+              <span>{loading ? "Refreshing..." : "Refresh"}</span>
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={openAddDialog}
+              className="h-8 px-3 text-xs gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs font-semibold shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Publish Drive</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Drives Table */}
+        <Card className="border-border shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -680,6 +778,7 @@ export default function PlacementDrivesPage() {
           </Table>
         </div>
       </Card>
+      </div>
 
       {/* ADD / EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

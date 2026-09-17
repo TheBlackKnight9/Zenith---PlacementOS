@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRouter from './src/routes/index.js';
 import { errorHandler } from './src/middleware/errorHandler.js';
@@ -45,8 +46,11 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Static uploads serving
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // 2. Request Logger (Development)
 if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {

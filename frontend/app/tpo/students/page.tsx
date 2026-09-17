@@ -413,7 +413,7 @@ export default function StudentsDirectoryPage() {
             className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Amount
+            CGPA
             <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
@@ -899,7 +899,7 @@ export default function StudentsDirectoryPage() {
                         email: "Email",
                         rollNumber: "Roll No",
                         department: "Branch",
-                        cgpa: "Amount",
+                        cgpa: "CGPA",
                         activeBacklogs: "Backlogs",
                       };
                       return (

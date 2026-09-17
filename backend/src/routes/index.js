@@ -5,6 +5,11 @@ import tpoRoutes from './tpoRoutes.js';
 import driveRoutes from './driveRoutes.js';
 import internshipRoutes from './internshipRoutes.js';
 import applicationRoutes from './applicationRoutes.js';
+import interviewRoutes from './interviewRoutes.js';
+import analyticsRoutes from './analyticsRoutes.js';
+import reportRoutes from './reportRoutes.js';
+import resourceRoutes from './resourceRoutes.js';
+import assessmentRoutes from './assessmentRoutes.js';
 
 const router = Router();
 
@@ -24,6 +29,11 @@ router.use('/tpo', tpoRoutes);
 router.use('/placement-drives', driveRoutes);
 router.use('/internships', internshipRoutes);
 router.use('/applications', applicationRoutes);
+router.use('/interviews', interviewRoutes);
+router.use('/analytics', analyticsRoutes);
+router.use('/reports', reportRoutes);
+router.use('/resources', resourceRoutes);
+router.use('/assessments', assessmentRoutes);
 
 export default router;
 

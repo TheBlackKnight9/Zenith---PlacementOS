@@ -25,9 +25,16 @@ export async function authenticate(req, res, next) {
       });
     }
 
+    const targetUserId = decoded.userId || decoded.id;
+    if (!targetUserId) {
+      return sendError(res, 401, 'Authentication token missing user identification', {
+        code: 'AUTH_TOKEN_INVALID'
+      });
+    }
+
     // Retrieve user and their associated profile
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: targetUserId },
       include: {
         student: { select: { id: true, rollNumber: true, department: true } },
         tpoProfile: { select: { id: true, fullName: true } }

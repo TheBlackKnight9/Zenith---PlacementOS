@@ -154,9 +154,14 @@ model SkillAssessment {
   title            String               @db.VarChar(200)
   description      String?              @db.Text
   category         String               @db.VarChar(50)
+  targetRole       String?              @map("target_role") @db.VarChar(150)
+  companyName      String?              @map("company_name") @db.VarChar(150)
+  targetBranches   String[]             @default(["ALL"]) @map("target_branches")
+  difficulty       String               @default("INTERMEDIATE") @db.VarChar(20)
   timeLimitMinutes Int                  @default(30) @map("time_limit_minutes")
   totalQuestions   Int                  @default(10) @map("total_questions")
   passingScore     Int                  @default(60) @map("passing_score")
+  isActive         Boolean              @default(true) @map("is_active")
   createdAt        DateTime             @default(now()) @map("created_at")
   updatedAt        DateTime             @updatedAt @map("updated_at")
 
@@ -164,6 +169,30 @@ model SkillAssessment {
   results          AssessmentResult[]
 
   @@map("skill_assessments")
+}
+
+model PlacementResource {
+  id              String      @id @default(uuid()) @db.Uuid
+  title           String      @db.VarChar(200)
+  description     String?     @db.Text
+  category        String      @db.VarChar(50) // "COMPANY_SPECIFIC", "BRANCH_CURATED", "GENERAL_APTITUDE", "INTERVIEW_PREP"
+  resourceType    String      @map("resource_type") @db.VarChar(30) // "PDF", "QUESTION_BANK", "VIDEO_PLAYLIST", "DOCX", "ARTICLE_LINK", "CODE_REPOSITORY"
+  fileUrl         String?     @map("file_url") @db.VarChar(500)
+  externalUrl     String?     @map("external_url") @db.VarChar(500)
+  companyName     String?     @map("company_name") @db.VarChar(150)
+  targetBranches  String[]    @default(["ALL"]) @map("target_branches")
+  subjectDomain   String?     @map("subject_domain") @db.VarChar(100)
+  fileSize        String?     @map("file_size") @db.VarChar(50)
+  tags            String[]
+  uploadedBy      String?     @default("TPO Cell") @map("uploaded_by") @db.VarChar(100)
+  isFeatured      Boolean     @default(false) @map("is_featured")
+  downloadCount   Int         @default(0) @map("download_count")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@index([category, resourceType])
+  @@index([companyName])
+  @@map("placement_resources")
 }
 
 model AssessmentQuestion {
@@ -279,6 +308,9 @@ model Application {
   internshipId    String?                @map("internship_id") @db.Uuid
   resumeId        String?                @map("resume_id") @db.Uuid
   status          ApplicationStatus      @default(APPLIED)
+  // Step progression tracking synchronized with drive selection process
+  currentStep     Int                    @default(1) @map("current_step")
+  stepStatus      String                 @default("IN_PROGRESS") @map("step_status") // "IN_PROGRESS" | "CLEARED" | "ELIMINATED"
   // Confidential TPO notes are isolated from student view
   internalRemarks String?                @map("internal_remarks") @db.Text
   studentRemarks  String?                @map("student_remarks") @db.Text

@@ -439,39 +439,6 @@ export default function DepartmentsPage() {
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-16">
-      {/* ─── Top Action Bar ─── */}
-      <div className="flex items-center justify-end gap-2.5">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchDepartments(true)}
-          disabled={isRefreshing || isLoading}
-          className="h-9 gap-1.5 border-input bg-background hover:bg-muted text-foreground"
-        >
-          <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin text-primary")} />
-          <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExportCSV}
-          className="h-9 gap-1.5 border-input bg-background hover:bg-muted text-foreground"
-        >
-          <Download className="h-4 w-4" />
-          <span>Export NIRF Report</span>
-        </Button>
-
-        <Button
-          size="sm"
-          onClick={() => setIsAddDeptModalOpen(true)}
-          className="h-9 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs font-semibold"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add Branch</span>
-        </Button>
-      </div>
-
       {/* ─── Error Alert Banner (if any) ─── */}
       {errorMessage && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-center justify-between text-destructive text-sm">
@@ -491,19 +458,19 @@ export default function DepartmentsPage() {
       )}
 
       {/* ─── 1. Executive Metric Strip (4 Cards) ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Active Branches */}
         <Card className="border-border bg-card shadow-xs transition-shadow">
-          <CardContent className="p-5 sm:p-5.5 space-y-3">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Academic Branches
               </span>
-              <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
-                <Building2 className="h-4.5 w-4.5" />
+              <div className="h-8.5 w-8.5 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+                <Building2 className="h-4 w-4" />
               </div>
             </div>
-            <div className="flex items-baseline gap-2 pt-1">
+            <div className="flex items-baseline gap-2 pt-0.5">
               <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                 {kpis.totalDepartments}
               </span>
@@ -520,16 +487,16 @@ export default function DepartmentsPage() {
 
         {/* Overall Placement Velocity */}
         <Card className="border-border bg-card shadow-xs transition-shadow">
-          <CardContent className="p-5 sm:p-5.5 space-y-3">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Campus Placement %
               </span>
-              <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
-                <TrendingUp className="h-4.5 w-4.5" />
+              <div className="h-8.5 w-8.5 rounded-lg bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4" />
               </div>
             </div>
-            <div className="flex items-baseline gap-2 pt-1">
+            <div className="flex items-baseline gap-2 pt-0.5">
               <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                 {kpis.overallPlacementRate}%
               </span>
@@ -550,16 +517,16 @@ export default function DepartmentsPage() {
 
         {/* Top Performing Branch */}
         <Card className="border-border bg-card shadow-xs transition-shadow">
-          <CardContent className="p-5 sm:p-5.5 space-y-3">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Leading Placement Rate
               </span>
-              <div className="h-9 w-9 rounded-lg bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center">
-                <Award className="h-4.5 w-4.5" />
+              <div className="h-8.5 w-8.5 rounded-lg bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center">
+                <Award className="h-4 w-4" />
               </div>
             </div>
-            <div className="flex items-baseline gap-2 pt-1">
+            <div className="flex items-baseline gap-2 pt-0.5">
               <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                 {kpis.topPerformingDept}
               </span>
@@ -576,16 +543,16 @@ export default function DepartmentsPage() {
 
         {/* Highest Average Package */}
         <Card className="border-border bg-card shadow-xs transition-shadow">
-          <CardContent className="p-5 sm:p-5.5 space-y-3">
+          <CardContent className="p-4.5 sm:p-5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Highest Average CTC
               </span>
-              <div className="h-9 w-9 rounded-lg bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
-                <Sparkles className="h-4.5 w-4.5" />
+              <div className="h-8.5 w-8.5 rounded-lg bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
+                <Sparkles className="h-4 w-4" />
               </div>
             </div>
-            <div className="flex items-baseline gap-2 pt-1">
+            <div className="flex items-baseline gap-2 pt-0.5">
               <span className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                 {kpis.highestAvgCtcDept}
               </span>
@@ -610,18 +577,39 @@ export default function DepartmentsPage() {
               Departmental progress against annual placement targets, CTC bands, and faculty coordinators.
             </p>
           </div>
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 py-1 rounded-md border border-border/40">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
               {departments.length} Branches Registered
             </span>
+
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsAddDeptModalOpen(true)}
-              className="h-8 gap-1.5 text-xs border-input hover:bg-muted font-medium"
+              onClick={() => fetchDepartments(true)}
+              disabled={isRefreshing || isLoading}
+              className="h-8 px-3 text-xs gap-1.5 border-input bg-background hover:bg-muted text-foreground font-medium shrink-0"
             >
-              <Plus className="h-3.5 w-3.5 text-primary" />
-              <span>New Branch</span>
+              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin text-primary")} />
+              <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCSV}
+              className="h-8 px-3 text-xs gap-1.5 border-input bg-background hover:bg-muted text-foreground font-medium shrink-0"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export NIRF Report</span>
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => setIsAddDeptModalOpen(true)}
+              className="h-8 px-3 text-xs gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs font-semibold shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Branch</span>
             </Button>
           </div>
         </div>

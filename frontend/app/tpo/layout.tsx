@@ -13,6 +13,8 @@ import {
   CalendarClock,
   BarChart3,
   FileText,
+  BookOpen,
+  CheckSquare,
   Bell,
   Settings,
   LogOut,
@@ -40,6 +42,8 @@ const navigationItems = [
   { name: "Placement Drives", href: "/tpo/placement-drives", icon: Briefcase },
   { name: "Applications", href: "/tpo/applications", icon: FileCheck2 },
   { name: "Interviews", href: "/tpo/interviews", icon: CalendarClock },
+  { name: "Resources", href: "/tpo/resources", icon: BookOpen },
+  { name: "Assessments", href: "/tpo/assessments", icon: CheckSquare },
   { name: "Analytics", href: "/tpo/analytics", icon: BarChart3 },
   { name: "Reports", href: "/tpo/reports", icon: FileText },
 ];
@@ -94,7 +98,7 @@ function TpoLayoutContent({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Primary Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {navigationItems.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
