@@ -7,6 +7,8 @@ import {
   createStudent,
   getDepartmentsAnalytics,
   updateDepartmentCoordinator,
+  createDepartment,
+  deleteDepartment,
 } from '../controllers/tpoController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/roleMiddleware.js';
@@ -19,6 +21,8 @@ router.use(authorizeRoles('TPO'));
 
 router.get('/dashboard-stats', getDashboardStats);
 router.get('/departments', getDepartmentsAnalytics);
+router.post('/departments', createDepartment);
+router.delete('/departments/:code', deleteDepartment);
 router.post('/departments/coordinator', updateDepartmentCoordinator);
 router.get('/students', getStudents);
 router.get('/students/:id', getStudentById);

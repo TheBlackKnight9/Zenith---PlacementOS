@@ -19,6 +19,7 @@ import {
   Filter,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import { useDepartment } from "@/contexts/DepartmentContext";
 import { Button } from "@/components/ui/button";
 import { SearchBar } from "@/components/ui/search-bar";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -74,6 +75,13 @@ interface TpoApplication {
 }
 
 export default function TpoApplicationsPage() {
+  const {
+    departmentCodes,
+    selectedDepartmentCode,
+    setSelectedDepartment,
+    getDepartmentName,
+  } = useDepartment();
+
   const [applications, setApplications] = useState<TpoApplication[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -81,6 +89,11 @@ export default function TpoApplicationsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [selectedDept, setSelectedDept] = useState<string>("ALL");
   const [reviewingApp, setReviewingApp] = useState<TpoApplication | null>(null);
+
+  // Sync with global department context
+  useEffect(() => {
+    setSelectedDept(selectedDepartmentCode || "ALL");
+  }, [selectedDepartmentCode]);
 
   // Modal editing state
   const [editStatus, setEditStatus] = useState<string>("APPLIED");
@@ -169,13 +182,16 @@ export default function TpoApplicationsPage() {
 
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Department Filter */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             <span className="text-xs font-semibold text-slate-400 uppercase mr-1">Dept:</span>
-            {["ALL", "CSE", "IT", "ECE", "MECH"].map((dept) => (
+            {["ALL", ...departmentCodes].map((dept) => (
               <button
                 key={dept}
                 type="button"
-                onClick={() => setSelectedDept(dept)}
+                onClick={() => {
+                  setSelectedDept(dept);
+                  setSelectedDepartment(getDepartmentName(dept));
+                }}
                 className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
                   selectedDept === dept
                     ? "bg-brand-50 text-brand-700 border border-brand-200 shadow-xs"

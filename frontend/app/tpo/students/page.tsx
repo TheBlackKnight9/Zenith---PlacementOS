@@ -37,6 +37,7 @@ import {
   ChevronDown,
   MoreHorizontal,
   SlidersHorizontal,
+  Eye,
 } from "lucide-react";
 import {
   ColumnDef,
@@ -131,30 +132,6 @@ interface StudentDetailData extends StudentListItem {
   }>;
 }
 
-const DEPARTMENTS = ["ALL", "CSE", "IT", "ECE", "MECH", "CIVIL"];
-
-const DEPT_NAME_TO_CODE: Record<string, string> = {
-  "All Departments": "ALL",
-  "Computer Science Engineering": "CSE",
-  "Information Technology": "IT",
-  "Electronics & Communication": "ECE",
-  "Mechanical Engineering": "MECH",
-  "Civil Engineering": "CIVIL",
-  "Electrical Engineering": "EE",
-  "MBA": "MBA",
-  "Applied Sciences": "AS",
-  "Artificial Intelligence & DS": "AI & DS",
-};
-
-const DEPT_CODE_TO_NAME: Record<string, string> = {
-  "ALL": "All Departments",
-  "CSE": "Computer Science Engineering",
-  "IT": "Information Technology",
-  "ECE": "Electronics & Communication",
-  "MECH": "Mechanical Engineering",
-  "CIVIL": "Civil Engineering",
-};
-
 const CGPA_OPTIONS = [
   { label: "All CGPA", value: "" },
   { label: "7.0+ CGPA", value: "7.0" },
@@ -165,7 +142,14 @@ const CGPA_OPTIONS = [
 ];
 
 export default function StudentsDirectoryPage() {
-  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+  const {
+    selectedDepartment,
+    setSelectedDepartment,
+    selectedDepartmentCode,
+    departments,
+    departmentCodes,
+    getDepartmentName,
+  } = useDepartment();
 
   // Primary Data State
   const [students, setStudents] = useState<StudentListItem[]>([]);
@@ -223,17 +207,17 @@ export default function StudentsDirectoryPage() {
 
   // Synchronize topbar department filter with page department filter
   useEffect(() => {
-    const code = DEPT_NAME_TO_CODE[selectedDepartment] || "ALL";
+    const code = selectedDepartmentCode || "ALL";
     if (code !== selectedDept) {
       setSelectedDept(code);
       setPage(1);
     }
-  }, [selectedDepartment]);
+  }, [selectedDepartmentCode]);
 
   // Handle local department pill click
   const handleDepartmentPillChange = (code: string) => {
     setSelectedDept(code);
-    const fullName = DEPT_CODE_TO_NAME[code] || "All Departments";
+    const fullName = getDepartmentName(code);
     setSelectedDepartment(fullName);
     setPage(1);
   };
@@ -291,7 +275,7 @@ export default function StudentsDirectoryPage() {
     [students]
   );
 
-  // TanStack Table Column Definitions (shadcn Data Table)
+  // TanStack Table Column Definitions (Official shadcn Data Table)
   const columns: ColumnDef<StudentListItem>[] = useMemo(
     () => [
       {
@@ -318,23 +302,31 @@ export default function StudentsDirectoryPage() {
         enableHiding: false,
       },
       {
-        accessorKey: "rollNumber",
+        accessorKey: "placementStatus",
         header: ({ column }) => (
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Roll Number
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+            Status
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
-        cell: ({ row }) => (
-          <span className="font-mono text-xs font-bold text-foreground">
-            {row.getValue("rollNumber")}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const placed = Boolean(row.getValue("placementStatus"));
+          return (
+            <span
+              className={cn(
+                "text-sm font-medium",
+                placed ? "text-emerald-500" : "text-muted-foreground"
+              )}
+            >
+              {placed ? "Success" : "Processing"}
+            </span>
+          );
+        },
       },
       {
         accessorKey: "name",
@@ -342,27 +334,56 @@ export default function StudentsDirectoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Student Details
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+            Name
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
-        cell: ({ row }) => {
-          const student = row.original;
-          return (
-            <div>
-              <div className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                {student.name}
-              </div>
-              <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                <span>{student.email}</span>
-                {student.phone && <span>• {student.phone}</span>}
-              </div>
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <span className="text-sm font-medium text-foreground">
+            {row.getValue("name")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "email",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Email
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <span className="text-sm font-normal text-foreground">
+            {row.getValue("email")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "rollNumber",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Roll No
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <span className="font-mono text-sm font-normal text-muted-foreground">
+            {row.getValue("rollNumber")}
+          </span>
+        ),
       },
       {
         accessorKey: "department",
@@ -370,20 +391,17 @@ export default function StudentsDirectoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             Branch
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
         cell: ({ row }) => (
-          <Badge
-            variant="outline"
-            className="font-semibold text-[11px] border-border bg-muted/40"
-          >
+          <span className="text-sm font-normal text-foreground">
             {row.getValue("department")}
-          </Badge>
+          </span>
         ),
       },
       {
@@ -392,18 +410,18 @@ export default function StudentsDirectoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            CGPA
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+            Amount
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
         cell: ({ row }) => {
           const val = Number(row.getValue("cgpa"));
           return (
-            <span className="font-bold text-foreground">
-              {isNaN(val) ? row.getValue("cgpa") : val.toFixed(2)}
+            <span className="text-sm font-medium text-foreground">
+              {isNaN(val) ? row.getValue("cgpa") : `${val.toFixed(2)} CGPA`}
             </span>
           );
         },
@@ -414,68 +432,21 @@ export default function StudentsDirectoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            className="-ml-3 h-8 text-sm font-medium hover:text-foreground text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             Backlogs
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+            <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-muted-foreground" />
           </Button>
         ),
         cell: ({ row }) => {
           const backlogs = Number(row.getValue("activeBacklogs"));
-          return backlogs === 0 ? (
-            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5" /> None
-            </span>
-          ) : (
-            <span className="text-xs font-medium text-destructive flex items-center gap-1">
-              <XCircle className="h-3.5 w-3.5" /> {backlogs} active
+          return (
+            <span className="text-sm font-normal text-muted-foreground">
+              {backlogs === 0 ? "None" : `${backlogs} active`}
             </span>
           );
         },
-      },
-      {
-        accessorKey: "placementStatus",
-        header: ({ column }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Placement Status
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
-          </Button>
-        ),
-        cell: ({ row }) => {
-          const placed = Boolean(row.getValue("placementStatus"));
-          return placed ? (
-            <Badge variant="success">Placed</Badge>
-          ) : (
-            <Badge variant="outline" className="text-muted-foreground">
-              Unplaced
-            </Badge>
-          );
-        },
-      },
-      {
-        accessorKey: "applicationsCount",
-        header: ({ column }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Applications
-            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
-          </Button>
-        ),
-        cell: ({ row }) => (
-          <div className="text-center font-medium text-muted-foreground text-xs">
-            {row.getValue("applicationsCount")}
-          </div>
-        ),
       },
       {
         id: "actions",
@@ -485,23 +456,15 @@ export default function StudentsDirectoryPage() {
           const student = row.original;
           return (
             <div
-              className="flex items-center justify-end gap-1"
+              className="flex items-center justify-end"
               onClick={(e) => e.stopPropagation()}
             >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openStudentDetail(student.id)}
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10"
-              >
-                View
-              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Student options"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Open menu"
                   >
                     <span className="sr-only">Open menu</span>
                     <MoreHorizontal className="h-4 w-4" />
@@ -510,18 +473,11 @@ export default function StudentsDirectoryPage() {
                 <DropdownMenuContent align="end" className="w-44">
                   <DropdownMenuLabel className="text-xs font-semibold">Actions</DropdownMenuLabel>
                   <DropdownMenuItem
-                    onClick={() => navigator.clipboard.writeText(student.id)}
+                    onClick={() => openStudentDetail(student.id)}
                     className="text-xs cursor-pointer gap-2"
                   >
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                    Copy Student ID
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => navigator.clipboard.writeText(student.rollNumber)}
-                    className="text-xs cursor-pointer gap-2"
-                  >
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                    Copy Roll No
+                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                    View Student
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => navigator.clipboard.writeText(student.email)}
@@ -530,13 +486,12 @@ export default function StudentsDirectoryPage() {
                     <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                     Copy Email
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => openStudentDetail(student.id)}
+                    onClick={() => navigator.clipboard.writeText(student.rollNumber)}
                     className="text-xs cursor-pointer gap-2"
                   >
-                    <FileText className="h-3.5 w-3.5 text-primary" />
-                    View Profile
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    Copy Roll Number
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -925,10 +880,10 @@ export default function StudentsDirectoryPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 gap-1.5 text-xs font-medium border-input"
+                    className="h-9 gap-1 text-sm font-medium border-input"
                   >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
                     Columns
+                    <ChevronDown className="h-4 w-4 ml-1 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
@@ -939,13 +894,13 @@ export default function StudentsDirectoryPage() {
                     .filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
                     .map((column) => {
                       const titleMap: Record<string, string> = {
-                        rollNumber: "Roll Number",
-                        name: "Student Details",
-                        department: "Branch",
-                        cgpa: "CGPA",
-                        activeBacklogs: "Backlogs",
                         placementStatus: "Status",
-                        applicationsCount: "Applications",
+                        name: "Name",
+                        email: "Email",
+                        rollNumber: "Roll No",
+                        department: "Branch",
+                        cgpa: "Amount",
+                        activeBacklogs: "Backlogs",
                       };
                       return (
                         <DropdownMenuCheckboxItem
@@ -968,7 +923,7 @@ export default function StudentsDirectoryPage() {
             <span className="text-xs font-semibold text-muted-foreground mr-1.5 flex items-center gap-1">
               <Building2 className="h-4 w-4" /> Branch:
             </span>
-            {DEPARTMENTS.map((dept) => (
+            {["ALL", ...departmentCodes].map((dept) => (
               <Button
                 key={dept}
                 size="sm"
@@ -1020,11 +975,11 @@ export default function StudentsDirectoryPage() {
       <div className="space-y-4">
         <div className="rounded-md border border-border bg-card overflow-hidden min-h-[480px]">
           <Table>
-            <TableHeader className="bg-muted/40">
+            <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="border-border hover:bg-transparent">
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="px-3">
+                    <TableHead key={header.id} className="h-10 px-4 text-sm font-medium text-muted-foreground">
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -1036,36 +991,33 @@ export default function StudentsDirectoryPage() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="px-3">
-                      <Skeleton className="h-4 w-4 rounded" />
+                  <TableRow key={idx} className="border-b border-border">
+                    <TableCell className="p-4 w-10">
+                      <Skeleton className="h-4 w-4 rounded-[4px]" />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="p-4">
+                      <Skeleton className="h-4 w-16 rounded" />
+                    </TableCell>
+                    <TableCell className="p-4">
+                      <Skeleton className="h-4 w-28 rounded" />
+                    </TableCell>
+                    <TableCell className="p-4">
+                      <Skeleton className="h-4 w-44 rounded" />
+                    </TableCell>
+                    <TableCell className="p-4">
                       <Skeleton className="h-4 w-20 rounded" />
                     </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <Skeleton className="h-4 w-32 rounded" />
-                        <Skeleton className="h-3 w-44 rounded" />
-                      </div>
+                    <TableCell className="p-4">
+                      <Skeleton className="h-4 w-16 rounded" />
                     </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-5 w-12 rounded-full" />
+                    <TableCell className="p-4">
+                      <Skeleton className="h-4 w-16 rounded" />
                     </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-10 rounded" />
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="p-4">
                       <Skeleton className="h-4 w-14 rounded" />
                     </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-8 rounded" />
-                    </TableCell>
-                    <TableCell className="text-right px-4">
-                      <Skeleton className="h-7 w-14 rounded ml-auto" />
+                    <TableCell className="p-4 text-right">
+                      <Skeleton className="h-8 w-8 rounded ml-auto" />
                     </TableCell>
                   </TableRow>
                 ))
@@ -1074,11 +1026,11 @@ export default function StudentsDirectoryPage() {
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && "selected"}
-                    className="hover:bg-accent/40 transition-colors cursor-pointer group"
+                    className="border-b border-border hover:bg-muted/50 data-[state=selected]:bg-muted/50 transition-colors cursor-pointer group"
                     onClick={() => openStudentDetail(row.original.id)}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-3">
+                      <TableCell key={cell.id} className="p-4 text-sm align-middle text-foreground">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
@@ -1126,58 +1078,30 @@ export default function StudentsDirectoryPage() {
           </Table>
         </div>
 
-        {/* ─── shadcn Data Table Pagination & Info Bar ─── */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-2 text-xs text-muted-foreground">
-          <div className="flex-1">
+        {/* ─── shadcn Data Table Pagination & Info Bar (Identical to Screenshot) ─── */}
+        <div className="flex items-center justify-between space-x-2 py-4">
+          <div className="flex-1 text-sm text-muted-foreground">
             {table.getFilteredSelectedRowModel().rows.length} of {total} row(s) selected.
           </div>
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6 lg:gap-8">
-            <div className="flex items-center gap-2">
-              <span>Rows per page:</span>
-              <Select
-                value={`${pageSize}`}
-                onValueChange={(val) => {
-                  setPageSize(Number(val));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="h-8 w-[72px] text-xs">
-                  <SelectValue placeholder={`${pageSize}`} />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  {[10, 20, 50].map((size) => (
-                    <SelectItem key={size} value={`${size}`} className="text-xs">
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="font-medium text-foreground">
-              Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1 || isLoading}
-              >
-                <span className="sr-only">Go to previous page</span>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => setPage(page + 1)}
-                disabled={page * pageSize >= total || isLoading}
-              >
-                <span className="sr-only">Go to next page</span>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page <= 1 || isLoading}
+              className="h-8 px-3 text-sm font-medium"
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(page + 1)}
+              disabled={page * pageSize >= total || isLoading}
+              className="h-8 px-3 text-sm font-medium"
+            >
+              Next
+            </Button>
           </div>
         </div>
       </div>
@@ -1596,14 +1520,11 @@ export default function StudentsDirectoryPage() {
                     <SelectValue placeholder="Select Department" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CSE" className="text-xs">Computer Science (CSE)</SelectItem>
-                    <SelectItem value="IT" className="text-xs">Information Technology (IT)</SelectItem>
-                    <SelectItem value="ECE" className="text-xs">Electronics & Communication (ECE)</SelectItem>
-                    <SelectItem value="MECH" className="text-xs">Mechanical Engineering (MECH)</SelectItem>
-                    <SelectItem value="CIVIL" className="text-xs">Civil Engineering (CIVIL)</SelectItem>
-                    <SelectItem value="EE" className="text-xs">Electrical Engineering (EE)</SelectItem>
-                    <SelectItem value="AI & DS" className="text-xs">Artificial Intelligence & DS</SelectItem>
-                    <SelectItem value="MBA" className="text-xs">MBA</SelectItem>
+                    {departments.map((dept) => (
+                      <SelectItem key={dept.code} value={dept.code} className="text-xs">
+                        {dept.name} ({dept.code})
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

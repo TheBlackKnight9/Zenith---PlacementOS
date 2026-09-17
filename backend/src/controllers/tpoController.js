@@ -720,7 +720,7 @@ const departmentCoordinatorsStore = {
   },
 };
 
-const ALL_DEPARTMENT_METADATA = [
+let ALL_DEPARTMENT_METADATA = [
   { code: "CSE", name: "Computer Science & Engineering", icon: "Code", color: "orange" },
   { code: "IT", name: "Information Technology", icon: "Laptop", color: "blue" },
   { code: "ECE", name: "Electronics & Communication", icon: "Cpu", color: "purple" },
@@ -927,6 +927,120 @@ export async function updateDepartmentCoordinator(req, res, next) {
 
     return sendSuccess(res, 200, `Coordinator updated for department ${code}`, {
       coordinator: departmentCoordinatorsStore[code],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Create a new Department / Branch
+ * POST /api/tpo/departments
+ */
+export async function createDepartment(req, res, next) {
+  try {
+    const {
+      code,
+      name,
+      intakeCapacity,
+      targetPlacementRate,
+      coordinatorFullName,
+      coordinatorDesignation,
+      coordinatorEmail,
+      coordinatorPhone,
+      coordinatorOffice,
+    } = req.body;
+
+    const trimmedCode = String(code || '').trim().toUpperCase();
+    const trimmedName = String(name || '').trim();
+
+    if (!trimmedCode) {
+      return sendError(res, 400, 'Branch code is required (e.g. EE, MECH, AERO)', { field: 'code' });
+    }
+    if (!trimmedName) {
+      return sendError(res, 400, 'Department full name is required', { field: 'name' });
+    }
+
+    // Check for duplicates
+    const exists = ALL_DEPARTMENT_METADATA.some(
+      (d) => d.code.toUpperCase() === trimmedCode
+    );
+    if (exists) {
+      return sendError(res, 400, `Department with code "${trimmedCode}" already exists`, { field: 'code' });
+    }
+
+    // Add metadata
+    ALL_DEPARTMENT_METADATA.push({
+      code: trimmedCode,
+      name: trimmedName,
+      icon: "Building2",
+      color: "orange",
+    });
+
+    // Add Coordinator
+    departmentCoordinatorsStore[trimmedCode] = {
+      fullName: coordinatorFullName?.trim() || "Faculty Coordinator",
+      designation: coordinatorDesignation?.trim() || "Placement Coordinator",
+      email: coordinatorEmail?.trim() || `coordinator.${trimmedCode.toLowerCase()}@college.edu`,
+      phone: coordinatorPhone?.trim() || "+91 98765 00000",
+      office: coordinatorOffice?.trim() || "Faculty Wing",
+      intakeCapacity: parseInt(intakeCapacity, 10) || 120,
+      targetPlacementRate: parseFloat(targetPlacementRate) || 80,
+    };
+
+    return sendSuccess(res, 201, `Branch "${trimmedCode}" (${trimmedName}) registered successfully`, {
+      code: trimmedCode,
+      name: trimmedName,
+      coordinator: departmentCoordinatorsStore[trimmedCode],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Remove a Department / Branch
+ * DELETE /api/tpo/departments/:code
+ */
+export async function deleteDepartment(req, res, next) {
+  try {
+    const { code } = req.params;
+    const force = req.query.force === 'true';
+    const trimmedCode = String(code || '').trim().toUpperCase();
+
+    const existsIndex = ALL_DEPARTMENT_METADATA.findIndex(
+      (d) => d.code.toUpperCase() === trimmedCode
+    );
+
+    if (existsIndex === -1) {
+      return sendError(res, 404, `Department "${trimmedCode}" not found`, { code: 'NOT_FOUND' });
+    }
+
+    // Check if students are currently enrolled in this department
+    const enrolledStudentsCount = await prisma.student.count({
+      where: {
+        department: {
+          equals: trimmedCode,
+          mode: 'insensitive',
+        },
+      },
+    });
+
+    if (enrolledStudentsCount > 0 && !force) {
+      return sendError(
+        res,
+        400,
+        `Cannot remove branch "${trimmedCode}": ${enrolledStudentsCount} student(s) are currently enrolled. Reassign or delete students first, or confirm force delete.`,
+        { enrolledStudentsCount, code: 'STUDENTS_ENROLLED' }
+      );
+    }
+
+    // Remove from array and coordinator store
+    const removedDept = ALL_DEPARTMENT_METADATA.splice(existsIndex, 1)[0];
+    delete departmentCoordinatorsStore[trimmedCode];
+
+    return sendSuccess(res, 200, `Branch "${trimmedCode}" (${removedDept.name}) removed successfully`, {
+      removedCode: trimmedCode,
     });
   } catch (error) {
     next(error);

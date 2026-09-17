@@ -220,6 +220,20 @@ model PlacementDrive {
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
+  // ── Rich Drive Data (optional, backward-compatible) ──
+  companyWebsite      String?    @map("company_website") @db.VarChar(255)
+  companyDescription  String?    @map("company_description") @db.Text
+  roleResponsibilities String?   @map("role_responsibilities") @db.Text
+  driveType           String     @default("INTERNSHIP_FT") @map("drive_type") @db.VarChar(30)
+  jobRoles            Json?      @map("job_roles")
+  internshipDuration  Int?       @map("internship_duration_months")
+  internshipStipend   Decimal?   @map("internship_stipend") @db.Decimal(10, 2)
+  bondAmount          Decimal?   @map("bond_amount") @db.Decimal(10, 2)
+  bondConditions      String?    @map("bond_conditions") @db.Text
+  joiningTimeline     String?    @map("joining_timeline") @db.VarChar(200)
+  workMode            String     @default("OFFICE") @map("work_mode") @db.VarChar(20)
+  selectionProcess    Json?      @map("selection_process")
+
   tpo              TpoProfile    @relation(fields: [tpoId], references: [id])
   applications     Application[]
 

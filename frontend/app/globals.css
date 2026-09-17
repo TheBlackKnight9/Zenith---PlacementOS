@@ -4,6 +4,17 @@
 
 @layer base {
   :root {
+    /* Geist Font Families & Typeset System */
+    --font-geist: var(--font-geist-sans);
+    --font-geist-mono: var(--font-geist-mono);
+
+    --typeset-font-body: var(--font-geist);
+    --typeset-font-heading: var(--font-geist);
+    --typeset-font-mono: var(--font-geist-mono);
+    --typeset-size: 15px;
+    --typeset-leading: 1.75;
+    --typeset-flow: 1.25em;
+
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -13,59 +24,70 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    /* Brand Primary: Indigo-Purple (#4f46e5 / 243 75% 59%) */
-    --primary: 243 75% 59%;
-    --primary-foreground: 210 40% 98%;
+    /* Brand Primary: Warm Institutional Orange (#ea580c) */
+    --primary: 21 90% 48%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 24 100% 97%;
+    --secondary-foreground: 21 90% 40%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 24 100% 96%;
+    --accent-foreground: 21 90% 44%;
 
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 243 75% 59%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 21 90% 48%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
   }
 
   .dark {
-    /* Canonical shadcn Slate dark theme */
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* Geist Font Families & Typeset System */
+    --font-geist: var(--font-geist-sans);
+    --font-geist-mono: var(--font-geist-mono);
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --typeset-font-body: var(--font-geist);
+    --typeset-font-heading: var(--font-geist);
+    --typeset-font-mono: var(--font-geist-mono);
+    --typeset-size: 15px;
+    --typeset-leading: 1.75;
+    --typeset-flow: 1.25em;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    /* Canonical shadcn Zinc / Matte Black dark theme with subtle elevation */
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
 
-    /* Approved Indigo-Purple (#4f46e5) */
-    --primary: 243 75% 59%;
-    --primary-foreground: 210 40% 98%;
+    --card: 0 0% 5.5%;
+    --card-foreground: 0 0% 98%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --popover: 0 0% 5.5%;
+    --popover-foreground: 0 0% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    /* Brand Primary: Warm Institutional Orange */
+    --primary: 24.6 95% 53.1%;
+    --primary-foreground: 0 0% 100%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 11%;
+    --muted-foreground: 0 0% 63.9%;
+
+    --accent: 0 0% 13.5%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 243 75% 59%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 24.6 95% 53.1%;
   }
 }
 
@@ -74,9 +96,46 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: var(--font-geist, var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif));
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ─── Official shadcn Documentation & Typeset System ─── */
+.typeset-docs {
+  --typeset-font-body: var(--font-geist);
+  --typeset-font-heading: var(--font-geist);
+  --typeset-font-mono: var(--font-geist-mono);
+  --typeset-size: 15px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+
+  font-family: var(--typeset-font-body);
+  font-size: var(--typeset-size);
+  line-height: var(--typeset-leading);
+}
+
+.typeset-docs h1,
+.typeset-docs h2,
+.typeset-docs h3,
+.typeset-docs h4,
+.typeset-docs h5,
+.typeset-docs h6 {
+  font-family: var(--typeset-font-heading);
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+.typeset-docs code,
+.typeset-docs pre,
+.typeset-docs kbd,
+.typeset-docs samp {
+  font-family: var(--typeset-font-mono);
+}
+
+.typeset-docs p:not(:first-child) {
+  margin-top: var(--typeset-flow);
 }
 
 /* Comprehensive dark mode bridge for application-wide consistency */
@@ -91,6 +150,8 @@
 .dark .border-stone-200,
 .dark .border-stone-200\/90,
 .dark .border-stone-200\/80,
+.dark .border-stone-200\/60,
+.dark .border-stone-150,
 .dark .border-stone-100 {
   border-color: hsl(var(--border)) !important;
 }
@@ -98,6 +159,8 @@
 .dark .text-slate-900,
 .dark .text-slate-800,
 .dark .text-neutral-900,
+.dark .text-neutral-800,
+.dark .text-neutral-700,
 .dark .text-stone-900,
 .dark .text-stone-800 {
   color: hsl(var(--foreground)) !important;
@@ -121,11 +184,68 @@
 .dark .bg-slate-50\/40,
 .dark .bg-slate-50\/50,
 .dark .bg-slate-50\/60,
+.dark .bg-slate-50\/75,
 .dark .bg-slate-100,
 .dark .bg-stone-50,
 .dark .bg-stone-50\/50,
+.dark .bg-stone-50\/60,
+.dark .bg-stone-50\/70,
+.dark .bg-stone-50\/75,
+.dark .bg-stone-50\/80,
 .dark .bg-stone-100 {
   background-color: hsl(var(--muted)) !important;
+}
+
+/* Graceful translucent chips for dark mode indicators */
+.dark .bg-orange-50,
+.dark .bg-orange-50\/70,
+.dark .bg-orange-50\/50 {
+  background-color: hsl(var(--primary) / 0.15) !important;
+  color: hsl(var(--primary)) !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: rgb(52, 211, 153) !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: rgb(251, 191, 36) !important;
+}
+
+.dark .bg-blue-50,
+.dark .bg-blue-50\/70 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: rgb(96, 165, 250) !important;
+}
+
+.dark .bg-rose-50 {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+  color: rgb(251, 113, 133) !important;
+}
+
+.dark .border-orange-100,
+.dark .border-orange-200 {
+  border-color: hsl(var(--primary) / 0.3) !important;
+}
+
+.dark .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.dark .border-amber-200,
+.dark .border-amber-200\/60 {
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+.dark .border-blue-100,
+.dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.dark .border-rose-200 {
+  border-color: rgba(244, 63, 94, 0.3) !important;
 }
 
 .dark .hover\:bg-slate-50:hover,

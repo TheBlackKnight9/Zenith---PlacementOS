@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import { useDepartment } from "@/contexts/DepartmentContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -48,6 +49,9 @@ interface InternshipItem {
 const ALL_BRANCHES = ["CSE", "IT", "ECE", "MECH", "CIVIL"];
 
 export default function TpoInternshipsPage() {
+  const { departmentCodes } = useDepartment();
+  const activeBranches = departmentCodes && departmentCodes.length > 0 ? departmentCodes : ALL_BRANCHES;
+
   const [internships, setInternships] = useState<InternshipItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -359,7 +363,7 @@ export default function TpoInternshipsPage() {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-700">Eligible Departments</label>
               <div className="flex flex-wrap gap-2">
-                {ALL_BRANCHES.map((branch) => {
+                {activeBranches.map((branch) => {
                   const isSelected = selectedBranches.includes(branch);
                   return (
                     <button

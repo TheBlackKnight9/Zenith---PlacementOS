@@ -135,3 +135,16 @@ export function TypographyMuted({
     </p>
   );
 }
+
+export function TypesetDocs({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn("typeset-docs", className)} {...props}>
+      {children}
+    </div>
+  );
+}
+

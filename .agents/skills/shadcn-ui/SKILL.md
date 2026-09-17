@@ -57,17 +57,32 @@ PlacementOS uses an accessible **blue-purple, white, and clean slate theme**.
 
 ## 📝 Typography Standards
 
+PlacementOS uses the official **Geist Sans** (`--font-geist`) and **Geist Mono** (`--font-geist-mono`) design system with shadcn/ui.
+
+### Typeset System (`.typeset-docs`)
+```css
+.typeset-docs {
+  --typeset-font-body: var(--font-geist);
+  --typeset-font-heading: var(--font-geist);
+  --typeset-font-mono: var(--font-geist-mono);
+  --typeset-size: 15px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+}
+```
+
 Always use semantic typography classes or the pre-built typography primitives from `@/components/ui/typography`:
 
 | Element | Component | Tailwind Classes | Usage |
 | :--- | :--- | :--- | :--- |
-| **H1** | `<TypographyH1>` | `scroll-m-20 text-3xl font-extrabold tracking-tight lg:text-4xl text-slate-900` | Page main titles |
-| **H2** | `<TypographyH2>` | `scroll-m-20 border-b pb-2 text-2xl font-semibold tracking-tight text-slate-800` | Major section headers |
-| **H3** | `<TypographyH3>` | `scroll-m-20 text-xl font-semibold tracking-tight text-slate-800` | Card titles, subsection headers |
-| **H4** | `<TypographyH4>` | `scroll-m-20 text-lg font-semibold tracking-tight text-slate-700` | Drawer / Modal subheaders |
-| **P** | `<TypographyP>` | `leading-7 text-sm text-slate-600 [&:not(:first-child)]:mt-4` | Body paragraphs |
-| **Lead** | `<TypographyLead>` | `text-base text-slate-500 font-normal` | Subtitle beneath headers |
-| **Muted** | `<TypographyMuted>` | `text-xs text-slate-400` | Footnotes, timestamps, metadata |
+| **H1** | `<TypographyH1>` | `scroll-m-20 text-3xl font-extrabold tracking-tight lg:text-4xl text-foreground font-heading` | Page main titles |
+| **H2** | `<TypographyH2>` | `scroll-m-20 border-b border-border pb-2 text-2xl font-semibold tracking-tight text-foreground first:mt-0 font-heading` | Major section headers |
+| **H3** | `<TypographyH3>` | `scroll-m-20 text-xl font-semibold tracking-tight text-foreground font-heading` | Card titles, subsection headers |
+| **H4** | `<TypographyH4>` | `scroll-m-20 text-lg font-semibold tracking-tight text-foreground font-heading` | Drawer / Modal subheaders |
+| **P** | `<TypographyP>` | `leading-7 text-sm text-muted-foreground [&:not(:first-child)]:mt-4 font-body` | Body paragraphs |
+| **Lead** | `<TypographyLead>` | `text-base text-muted-foreground font-normal` | Subtitle beneath headers |
+| **Muted** | `<TypographyMuted>` | `text-xs text-muted-foreground` | Footnotes, timestamps, metadata |
+| **Typeset Docs** | `<TypesetDocs>` | `typeset-docs` | Documentation and editorial typesetting container |
 
 ---
 

@@ -244,22 +244,9 @@ function TpoLayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ─── Department Filter Component with shadcn Select ─── */
-const departments = [
-  "All Departments",
-  "Computer Science Engineering",
-  "Information Technology",
-  "Electronics & Communication",
-  "Mechanical Engineering",
-  "Civil Engineering",
-  "Electrical Engineering",
-  "MBA",
-  "Applied Sciences",
-  "Artificial Intelligence & DS",
-];
-
+/* ─── Department Filter Component with Dynamic Sync ─── */
 function DepartmentFilter() {
-  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+  const { selectedDepartment, setSelectedDepartment, departments } = useDepartment();
 
   return (
     <div className="min-w-[200px]">
@@ -269,9 +256,12 @@ function DepartmentFilter() {
           <SelectValue placeholder="Department" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="All Departments" className="text-xs font-semibold">
+            All Departments
+          </SelectItem>
           {departments.map((dept) => (
-            <SelectItem key={dept} value={dept} className="text-xs">
-              {dept}
+            <SelectItem key={dept.code} value={dept.name} className="text-xs">
+              {dept.name} ({dept.code})
             </SelectItem>
           ))}
         </SelectContent>
