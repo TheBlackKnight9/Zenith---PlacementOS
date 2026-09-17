@@ -1,0 +1,1895 @@
+"use client";
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  Users,
+  Search,
+  Filter,
+  GraduationCap,
+  Award,
+  BookOpen,
+  Phone,
+  Mail,
+  CheckCircle2,
+  XCircle,
+  ExternalLink,
+  Download,
+  Upload,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  FileSpreadsheet,
+  Copy,
+  Check,
+  AlertCircle,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Briefcase,
+  FileText,
+  Clock,
+  Sparkles,
+  Layers,
+  X,
+  Building2,
+  Plus,
+  UserPlus,
+  ChevronDown,
+  MoreHorizontal,
+  SlidersHorizontal,
+} from "lucide-react";
+import {
+  ColumnDef,
+  ColumnFiltersState,
+  SortingState,
+  VisibilityState,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { apiClient } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SearchBar } from "@/components/ui/search-bar";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useDepartment } from "@/contexts/DepartmentContext";
+import { cn } from "@/lib/utils";
+
+/* ─── Interfaces ─── */
+interface StudentListItem {
+  id: string;
+  rollNumber: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  department: string;
+  batchYear: number;
+  cgpa: number;
+  tenthPercentage: number | null;
+  twelfthPercentage: number | null;
+  activeBacklogs: number;
+  totalBacklogs: number;
+  placementStatus: boolean;
+  skills: string[];
+  applicationsCount: number;
+}
+
+interface StudentDetailData extends StudentListItem {
+  firstName?: string | null;
+  lastName?: string | null;
+  bio?: string | null;
+  githubUrl?: string | null;
+  linkedinUrl?: string | null;
+  portfolioUrl?: string | null;
+  resumes?: Array<{ id: string; title: string; isDefault: boolean; createdAt: string }>;
+  applications?: Array<{
+    id: string;
+    status: string;
+    appliedAt: string;
+    drive?: { companyName: string; jobRole: string; packageCtc: number };
+    internship?: { companyName: string; roleTitle: string };
+    interviews?: Array<{ roundNumber: number; roundType: string; scheduledAt: string; status: string }>;
+  }>;
+}
+
+const DEPARTMENTS = ["ALL", "CSE", "IT", "ECE", "MECH", "CIVIL"];
+
+const DEPT_NAME_TO_CODE: Record<string, string> = {
+  "All Departments": "ALL",
+  "Computer Science Engineering": "CSE",
+  "Information Technology": "IT",
+  "Electronics & Communication": "ECE",
+  "Mechanical Engineering": "MECH",
+  "Civil Engineering": "CIVIL",
+  "Electrical Engineering": "EE",
+  "MBA": "MBA",
+  "Applied Sciences": "AS",
+  "Artificial Intelligence & DS": "AI & DS",
+};
+
+const DEPT_CODE_TO_NAME: Record<string, string> = {
+  "ALL": "All Departments",
+  "CSE": "Computer Science Engineering",
+  "IT": "Information Technology",
+  "ECE": "Electronics & Communication",
+  "MECH": "Mechanical Engineering",
+  "CIVIL": "Civil Engineering",
+};
+
+const CGPA_OPTIONS = [
+  { label: "All CGPA", value: "" },
+  { label: "7.0+ CGPA", value: "7.0" },
+  { label: "7.5+ CGPA", value: "7.5" },
+  { label: "8.0+ CGPA", value: "8.0" },
+  { label: "8.5+ CGPA", value: "8.5" },
+  { label: "9.0+ CGPA", value: "9.0" },
+];
+
+export default function StudentsDirectoryPage() {
+  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+
+  // Primary Data State
+  const [students, setStudents] = useState<StudentListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Filters State
+  const [search, setSearch] = useState("");
+  const [selectedDept, setSelectedDept] = useState("ALL");
+  const [minCgpa, setMinCgpa] = useState("");
+  const [zeroBacklogsOnly, setZeroBacklogsOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // Table Sorting, Visibility & Selection States (shadcn Data Table)
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [copiedNotification, setCopiedNotification] = useState(false);
+
+  // Detail Sheet State
+  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
+  const [studentDetail, setStudentDetail] = useState<StudentDetailData | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  // Add Student Modal State
+  const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
+  const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
+  const [addStudentError, setAddStudentError] = useState("");
+  const [studentFormData, setStudentFormData] = useState({
+    rollNumber: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    department: "CSE",
+    batchYear: 2027,
+    cgpa: "8.0",
+    tenthPercentage: "90",
+    twelfthPercentage: "90",
+    activeBacklogs: 0,
+    totalBacklogs: 0,
+    placementStatus: false,
+    skills: "",
+  });
+
+  // Bulk Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatusMessage, setImportStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Synchronize topbar department filter with page department filter
+  useEffect(() => {
+    const code = DEPT_NAME_TO_CODE[selectedDepartment] || "ALL";
+    if (code !== selectedDept) {
+      setSelectedDept(code);
+      setPage(1);
+    }
+  }, [selectedDepartment]);
+
+  // Handle local department pill click
+  const handleDepartmentPillChange = (code: string) => {
+    setSelectedDept(code);
+    const fullName = DEPT_CODE_TO_NAME[code] || "All Departments";
+    setSelectedDepartment(fullName);
+    setPage(1);
+  };
+
+  // Fetch Students from API
+  const loadStudents = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      if (selectedDept !== "ALL") params.set("department", selectedDept);
+      if (minCgpa) params.set("minCgpa", minCgpa);
+      if (zeroBacklogsOnly) params.set("maxBacklogs", "0");
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
+
+      const queryStr = params.toString() ? `?${params.toString()}` : "";
+      const res = await apiClient.get<{ total: number; students: StudentListItem[] }>(
+        `/tpo/students${queryStr}`
+      );
+      setStudents(res.students || []);
+      setTotal(res.total || 0);
+    } catch (err: any) {
+      console.error("Failed to load students:", err);
+      setErrorMessage(err.message || "Failed to load students directory from server.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [search, selectedDept, minCgpa, zeroBacklogsOnly, page, pageSize]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadStudents();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [loadStudents]);
+
+  // Load Single Student Detailed Data for Slide-Over Sheet
+  const openStudentDetail = useCallback(
+    async (studentId: string) => {
+      setActiveStudentId(studentId);
+      setIsLoadingDetail(true);
+      try {
+        const res = await apiClient.get<{ student: StudentDetailData }>(`/tpo/students/${studentId}`);
+        setStudentDetail(res.student);
+      } catch (err) {
+        console.error("Failed to fetch student details:", err);
+        const fallback = students.find((s) => s.id === studentId);
+        if (fallback) setStudentDetail(fallback as StudentDetailData);
+      } finally {
+        setIsLoadingDetail(false);
+      }
+    },
+    [students]
+  );
+
+  // TanStack Table Column Definitions (shadcn Data Table)
+  const columns: ColumnDef<StudentListItem>[] = useMemo(
+    () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && "indeterminate")
+            }
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label="Select row"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+      {
+        accessorKey: "rollNumber",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Roll Number
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <span className="font-mono text-xs font-bold text-foreground">
+            {row.getValue("rollNumber")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Student Details
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const student = row.original;
+          return (
+            <div>
+              <div className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                {student.name}
+              </div>
+              <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                <span>{student.email}</span>
+                {student.phone && <span>• {student.phone}</span>}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "department",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Branch
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <Badge
+            variant="outline"
+            className="font-semibold text-[11px] border-border bg-muted/40"
+          >
+            {row.getValue("department")}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "cgpa",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            CGPA
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const val = Number(row.getValue("cgpa"));
+          return (
+            <span className="font-bold text-foreground">
+              {isNaN(val) ? row.getValue("cgpa") : val.toFixed(2)}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "activeBacklogs",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Backlogs
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const backlogs = Number(row.getValue("activeBacklogs"));
+          return backlogs === 0 ? (
+            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5" /> None
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-destructive flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5" /> {backlogs} active
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "placementStatus",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Placement Status
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const placed = Boolean(row.getValue("placementStatus"));
+          return placed ? (
+            <Badge variant="success">Placed</Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">
+              Unplaced
+            </Badge>
+          );
+        },
+      },
+      {
+        accessorKey: "applicationsCount",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-3 h-8 text-xs font-semibold hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          >
+            Applications
+            <ArrowUpDown className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        ),
+        cell: ({ row }) => (
+          <div className="text-center font-medium text-muted-foreground text-xs">
+            {row.getValue("applicationsCount")}
+          </div>
+        ),
+      },
+      {
+        id: "actions",
+        enableHiding: false,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const student = row.original;
+          return (
+            <div
+              className="flex items-center justify-end gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openStudentDetail(student.id)}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10"
+              >
+                View
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Student options"
+                  >
+                    <span className="sr-only">Open menu</span>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel className="text-xs font-semibold">Actions</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => navigator.clipboard.writeText(student.id)}
+                    className="text-xs cursor-pointer gap-2"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    Copy Student ID
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigator.clipboard.writeText(student.rollNumber)}
+                    className="text-xs cursor-pointer gap-2"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    Copy Roll No
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigator.clipboard.writeText(student.email)}
+                    className="text-xs cursor-pointer gap-2"
+                  >
+                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                    Copy Email
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => openStudentDetail(student.id)}
+                    className="text-xs cursor-pointer gap-2"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-primary" />
+                    View Profile
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+      },
+    ],
+    [openStudentDetail]
+  );
+
+  // Initialize TanStack React Table
+  const table = useReactTable({
+    data: students,
+    columns,
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id,
+    state: {
+      sorting,
+      columnVisibility,
+      rowSelection,
+    },
+  });
+
+  const copySelectedEmails = () => {
+    const selectedStudents = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+    const emails = selectedStudents.map((s) => s.email).join(", ");
+    navigator.clipboard.writeText(emails);
+    setCopiedNotification(true);
+    setTimeout(() => setCopiedNotification(false), 2500);
+  };
+
+  // Add Student Submit Handler
+  const handleAddStudentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingStudent(true);
+    setAddStudentError("");
+
+    try {
+      await apiClient.post("/tpo/students", {
+        rollNumber: studentFormData.rollNumber,
+        firstName: studentFormData.firstName,
+        lastName: studentFormData.lastName,
+        email: studentFormData.email,
+        phone: studentFormData.phone || undefined,
+        department: studentFormData.department,
+        batchYear: studentFormData.batchYear,
+        cgpa: studentFormData.cgpa,
+        tenthPercentage: studentFormData.tenthPercentage || undefined,
+        twelfthPercentage: studentFormData.twelfthPercentage || undefined,
+        activeBacklogs: studentFormData.activeBacklogs,
+        totalBacklogs: studentFormData.totalBacklogs,
+        placementStatus: studentFormData.placementStatus,
+        skills: studentFormData.skills
+          ? studentFormData.skills.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
+      });
+
+      // Reset form & reload directory
+      setStudentFormData({
+        rollNumber: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        department: "CSE",
+        batchYear: 2027,
+        cgpa: "8.0",
+        tenthPercentage: "90",
+        twelfthPercentage: "90",
+        activeBacklogs: 0,
+        totalBacklogs: 0,
+        placementStatus: false,
+        skills: "",
+      });
+      setIsAddStudentModalOpen(false);
+      loadStudents();
+    } catch (err: any) {
+      setAddStudentError(err.message || "Failed to register student. Please verify the roll number and email.");
+    } finally {
+      setIsSubmittingStudent(false);
+    }
+  };
+
+  // Export to CSV Function
+  const exportToCsv = (studentsToExport: StudentListItem[] = students) => {
+    const headers = [
+      "Roll Number",
+      "Full Name",
+      "Email",
+      "Phone",
+      "Department",
+      "Batch Year",
+      "CGPA",
+      "10th Percentage",
+      "12th Percentage",
+      "Active Backlogs",
+      "Total Backlogs",
+      "Placement Status",
+      "Skills",
+      "Applications Count",
+    ];
+
+    const rows = studentsToExport.map((s) => [
+      `"${s.rollNumber}"`,
+      `"${s.name}"`,
+      `"${s.email}"`,
+      `"${s.phone || ""}"`,
+      `"${s.department}"`,
+      s.batchYear,
+      s.cgpa.toFixed(2),
+      s.tenthPercentage !== null ? s.tenthPercentage : "",
+      s.twelfthPercentage !== null ? s.twelfthPercentage : "",
+      s.activeBacklogs,
+      s.totalBacklogs,
+      s.placementStatus ? "Placed" : "Unplaced",
+      `"${s.skills.join("; ")}"`,
+      s.applicationsCount,
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `PlacementOS_Students_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Download Sample CSV Template
+  const downloadSampleCsv = () => {
+    const sampleHeaders = "Roll Number,First Name,Last Name,Email,Phone,Department,Batch Year,CGPA,10th %,12th %,Active Backlogs,Total Backlogs,Skills\r\n";
+    const sampleRows = [
+      "23CS101,Rahul,Sharma,rahul.sharma@college.edu,+91 9876543211,CSE,2027,8.75,92.5,90.0,0,0,Python;React.js;SQL",
+      "23IT102,Anjali,Deshmukh,anjali.d@college.edu,+91 9876543212,IT,2027,9.10,95.0,94.2,0,0,Java;AWS;Data Structures",
+      "23EC103,Karthik,Menon,karthik.m@college.edu,+91 9876543213,ECE,2027,7.80,88.0,85.5,0,1,Embedded C;Python;MATLAB",
+    ].join("\r\n");
+
+    const blob = new Blob([sampleHeaders + sampleRows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "PlacementOS_Student_Import_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Parse CSV File on upload
+  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file);
+    setImportStatusMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
+        if (lines.length < 2) {
+          setImportStatusMessage({ type: "error", text: "CSV file is empty or missing data rows." });
+          return;
+        }
+
+        const parseLine = (line: string) => {
+          const result: string[] = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === "," && !inQuotes) {
+              result.push(current.trim());
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        };
+
+        const rows: any[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseLine(lines[i]);
+          if (cols.length >= 4) {
+            rows.push({
+              rollNumber: cols[0],
+              firstName: cols[1],
+              lastName: cols[2] || "",
+              email: cols[3],
+              phone: cols[4] || null,
+              department: cols[5] || "CSE",
+              batchYear: cols[6] ? parseInt(cols[6], 10) : 2027,
+              cgpa: cols[7] ? parseFloat(cols[7]) : 7.0,
+              tenthPercentage: cols[8] ? parseFloat(cols[8]) : null,
+              twelfthPercentage: cols[9] ? parseFloat(cols[9]) : null,
+              activeBacklogs: cols[10] ? parseInt(cols[10], 10) : 0,
+              totalBacklogs: cols[11] ? parseInt(cols[11], 10) : 0,
+              skills: cols[12] ? cols[12].replace(/;/g, ",").split(",").map((s) => s.trim()) : [],
+            });
+          }
+        }
+        setParsedRows(rows);
+      } catch (parseErr) {
+        setImportStatusMessage({ type: "error", text: "Failed to parse CSV file format." });
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Submit Bulk Import to Server
+  const handleBulkImportSubmit = async () => {
+    if (parsedRows.length === 0) return;
+    setIsImporting(true);
+    setImportStatusMessage(null);
+
+    try {
+      const res = await apiClient.post<{
+        totalProcessed: number;
+        importedCount: number;
+        updatedCount: number;
+        errorsCount: number;
+      }>("/tpo/students/bulk-import", { students: parsedRows });
+
+      setImportStatusMessage({
+        type: "success",
+        text: `Successfully processed ${res.totalProcessed} records (${res.importedCount} imported, ${res.updatedCount} updated).`,
+      });
+
+      loadStudents();
+      setTimeout(() => {
+        setIsImportModalOpen(false);
+        setCsvFile(null);
+        setParsedRows([]);
+      }, 1800);
+    } catch (err: any) {
+      setImportStatusMessage({
+        type: "error",
+        text: err.message || "Failed to import students. Please check your data format.",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const resetAllFilters = () => {
+    setSearch("");
+    setSelectedDept("ALL");
+    setSelectedDepartment("All Departments");
+    setMinCgpa("");
+    setZeroBacklogsOnly(false);
+    setPage(1);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ─── Filter & Action Toolbar ─── */}
+      <Card className="border-border bg-card shadow-xs">
+        <CardContent className="p-3.5 space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+            {/* Search Input & Total Count */}
+            <div className="flex items-center gap-2.5 w-full lg:max-w-md">
+              <SearchBar
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                onClear={() => {
+                  setSearch("");
+                  setPage(1);
+                }}
+                placeholder="Search students by name, roll number, email..."
+                className="w-full h-9 text-xs"
+              />
+              <Badge
+                variant="outline"
+                className="hidden sm:inline-flex h-9 px-3 items-center font-semibold text-muted-foreground border-border bg-muted/40 shrink-0 text-xs rounded-lg"
+              >
+                {total} Students
+              </Badge>
+            </div>
+
+            {/* Quick Filters + Add Student with Dropdown */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* CGPA Select */}
+              <Select
+                value={minCgpa || "ALL"}
+                onValueChange={(val) => {
+                  setMinCgpa(val === "ALL" ? "" : val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[125px] text-xs bg-background border-input font-medium">
+                  <SelectValue placeholder="All CGPA" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CGPA_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.label} value={opt.value || "ALL"} className="text-xs">
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Zero Backlogs Filter Button */}
+              <Button
+                variant={zeroBacklogsOnly ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setZeroBacklogsOnly(!zeroBacklogsOnly);
+                  setPage(1);
+                }}
+                className={cn(
+                  "h-9 gap-1.5 text-xs font-medium border-input transition-colors",
+                  zeroBacklogsOnly && "border-primary/50 text-primary font-semibold"
+                )}
+              >
+                <CheckCircle2 className={cn("h-4 w-4", zeroBacklogsOnly ? "text-primary" : "text-muted-foreground")} />
+                Zero Backlogs
+              </Button>
+
+              {/* Combined Action Button: [ + Add Student ] [ ▼ ] */}
+              <div className="inline-flex rounded-lg shadow-xs overflow-hidden">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setAddStudentError("");
+                    setIsAddStudentModalOpen(true);
+                  }}
+                  className="h-9 gap-1.5 text-xs font-semibold rounded-r-none pr-3"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add Student
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="h-9 px-2 rounded-l-none border-l border-primary-foreground/20 focus-visible:ring-0 focus-visible:ring-offset-0"
+                      aria-label="More student actions"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem
+                      onClick={() => setIsImportModalOpen(true)}
+                      className="gap-2.5 text-xs cursor-pointer py-2"
+                    >
+                      <Upload className="h-4 w-4 text-primary" />
+                      <div>
+                        <div className="font-semibold text-foreground">Import Students</div>
+                        <div className="text-[10px] text-muted-foreground">Bulk upload via CSV</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => exportToCsv(students)}
+                      disabled={students.length === 0}
+                      className="gap-2.5 text-xs cursor-pointer py-2"
+                    >
+                      <Download className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <div className="font-semibold text-foreground">Export Students</div>
+                        <div className="text-[10px] text-muted-foreground">Download CSV dataset</div>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* Columns Visibility Dropdown (Official shadcn Data Table) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 text-xs font-medium border-input"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Columns
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel className="text-xs font-semibold">Toggle columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {table
+                    .getAllColumns()
+                    .filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
+                    .map((column) => {
+                      const titleMap: Record<string, string> = {
+                        rollNumber: "Roll Number",
+                        name: "Student Details",
+                        department: "Branch",
+                        cgpa: "CGPA",
+                        activeBacklogs: "Backlogs",
+                        placementStatus: "Status",
+                        applicationsCount: "Applications",
+                      };
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="text-xs capitalize cursor-pointer"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                        >
+                          {titleMap[column.id] || column.id}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* Department Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-border">
+            <span className="text-xs font-semibold text-muted-foreground mr-1.5 flex items-center gap-1">
+              <Building2 className="h-4 w-4" /> Branch:
+            </span>
+            {DEPARTMENTS.map((dept) => (
+              <Button
+                key={dept}
+                size="sm"
+                variant={selectedDept === dept ? "default" : "outline"}
+                onClick={() => handleDepartmentPillChange(dept)}
+                className={cn(
+                  "h-7 px-3 text-xs rounded-full font-medium transition-all",
+                  selectedDept !== dept && "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                )}
+              >
+                {dept}
+              </Button>
+            ))}
+
+            {(search || selectedDept !== "ALL" || minCgpa || zeroBacklogsOnly) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetAllFilters}
+                className="h-7 text-xs text-muted-foreground hover:text-primary ml-auto font-medium"
+              >
+                Reset Filters
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ─── Error State Banner ─── */}
+      {errorMessage && (
+        <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center justify-between gap-3 text-xs text-destructive">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={loadStudents}
+            className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* ─── Official shadcn Data Table ─── */}
+      <div className="space-y-4">
+        <div className="rounded-md border border-border bg-card overflow-hidden min-h-[480px]">
+          <Table>
+            <TableHeader className="bg-muted/40">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id} className="border-border hover:bg-transparent">
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="px-3">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="px-3">
+                      <Skeleton className="h-4 w-4 rounded" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-20 rounded" />
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <Skeleton className="h-4 w-32 rounded" />
+                        <Skeleton className="h-3 w-44 rounded" />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-12 rounded-full" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-10 rounded" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-14 rounded" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-8 rounded" />
+                    </TableCell>
+                    <TableCell className="text-right px-4">
+                      <Skeleton className="h-7 w-14 rounded ml-auto" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="hover:bg-accent/40 transition-colors cursor-pointer group"
+                    onClick={() => openStudentDetail(row.original.id)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-3">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-64 text-center">
+                    <div className="max-w-xs mx-auto space-y-3">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                        <Users className="h-6 w-6" />
+                      </div>
+                      <div className="font-semibold text-foreground text-sm">
+                        No students found
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        No students match your selected filters. Register a new student or import an entire cohort via CSV.
+                      </p>
+                      <div className="flex items-center justify-center gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={resetAllFilters}
+                          className="h-8 text-xs"
+                        >
+                          Reset Filters
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setAddStudentError("");
+                            setIsAddStudentModalOpen(true);
+                          }}
+                          className="h-8 text-xs gap-1.5"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add Student
+                        </Button>
+                      </div>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* ─── shadcn Data Table Pagination & Info Bar ─── */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-2 text-xs text-muted-foreground">
+          <div className="flex-1">
+            {table.getFilteredSelectedRowModel().rows.length} of {total} row(s) selected.
+          </div>
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6 lg:gap-8">
+            <div className="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <Select
+                value={`${pageSize}`}
+                onValueChange={(val) => {
+                  setPageSize(Number(val));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[72px] text-xs">
+                  <SelectValue placeholder={`${pageSize}`} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 50].map((size) => (
+                    <SelectItem key={size} value={`${size}`} className="text-xs">
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="font-medium text-foreground">
+              Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page <= 1 || isLoading}
+              >
+                <span className="sr-only">Go to previous page</span>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setPage(page + 1)}
+                disabled={page * pageSize >= total || isLoading}
+              >
+                <span className="sr-only">Go to next page</span>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Floating Bulk Actions Bar ─── */}
+      {table.getFilteredSelectedRowModel().rows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-card text-card-foreground rounded-xl shadow-2xl px-4 py-2.5 flex items-center gap-3 border border-border animate-in fade-in slide-in-from-bottom-4">
+          <Badge className="font-bold text-xs px-2">
+            {table.getFilteredSelectedRowModel().rows.length} Selected
+          </Badge>
+          <div className="h-4 w-px bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={copySelectedEmails}
+            className="h-8 text-xs gap-1.5 text-foreground hover:bg-muted"
+          >
+            {copiedNotification ? (
+              <Check className="h-4 w-4 text-emerald-600" />
+            ) : (
+              <Copy className="h-4 w-4 text-muted-foreground" />
+            )}
+            {copiedNotification ? "Copied!" : "Copy Emails"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const selectedStudents = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+              exportToCsv(selectedStudents);
+            }}
+            className="h-8 text-xs gap-1.5 text-foreground hover:bg-muted"
+          >
+            <Download className="h-4 w-4 text-primary" />
+            Export Selected
+          </Button>
+          <button
+            onClick={() => table.resetRowSelection()}
+            className="p-1 text-muted-foreground hover:text-foreground rounded-md transition-colors ml-1"
+            title="Clear Selection"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ─── Slide-Over Profile Drawer (Sheet) ─── */}
+      <Sheet open={!!activeStudentId} onOpenChange={(open) => !open && setActiveStudentId(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-xl p-0 flex flex-col justify-between overflow-hidden">
+          {isLoadingDetail ? (
+            <div className="p-8 text-center space-y-3">
+              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin mx-auto" />
+              <p className="text-xs text-muted-foreground">Loading student profile...</p>
+            </div>
+          ) : studentDetail ? (
+            <div className="flex flex-col h-full overflow-hidden">
+              {/* Header Profile Bar */}
+              <div className="p-6 bg-card border-b border-border space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="h-12 w-12 rounded-xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center shadow-sm">
+                      {(studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber || "ST").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-foreground leading-tight">
+                        {studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber}
+                      </h2>
+                      <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                        {studentDetail.rollNumber} • {studentDetail.department} (Batch {studentDetail.batchYear})
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {studentDetail.placementStatus ? (
+                    <Badge variant="success">Placed Candidate</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">Active Seeking</Badge>
+                  )}
+                  <Badge variant="outline">CGPA: {studentDetail.cgpa.toFixed(2)}</Badge>
+                  {studentDetail.activeBacklogs === 0 ? (
+                    <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50">
+                      Zero Backlogs
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive">
+                      {studentDetail.activeBacklogs} Active Backlogs
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Tabs Content */}
+              <div className="p-6 flex-1 overflow-y-auto space-y-5">
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="grid grid-cols-3 w-full">
+                    <TabsTrigger value="overview" className="text-xs">
+                      Academics
+                    </TabsTrigger>
+                    <TabsTrigger value="drives" className="text-xs">
+                      Drives ({studentDetail.applications?.length || studentDetail.applicationsCount || 0})
+                    </TabsTrigger>
+                    <TabsTrigger value="skills" className="text-xs">
+                      Skills & Docs
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Tab 1: Academics & Contact */}
+                  <TabsContent value="overview" className="space-y-4 pt-3">
+                    {/* Academic Cards */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="p-3 rounded-xl bg-secondary/50 border border-secondary text-center">
+                        <span className="text-[10px] font-bold uppercase text-secondary-foreground tracking-wider">
+                          Current CGPA
+                        </span>
+                        <div className="text-xl font-extrabold text-foreground mt-0.5">
+                          {studentDetail.cgpa.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted/40 border border-border text-center">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">
+                          10th Grade
+                        </span>
+                        <div className="text-base font-bold text-foreground mt-0.5">
+                          {studentDetail.tenthPercentage ? `${studentDetail.tenthPercentage}%` : "N/A"}
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted/40 border border-border text-center">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">
+                          12th Grade
+                        </span>
+                        <div className="text-base font-bold text-foreground mt-0.5">
+                          {studentDetail.twelfthPercentage ? `${studentDetail.twelfthPercentage}%` : "N/A"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contact & Registry Info */}
+                    <div className="p-4 rounded-xl border border-border bg-card space-y-2.5">
+                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
+                        Contact Registry
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="truncate">{studentDetail.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span>{studentDetail.phone || "No phone added"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Social Profiles */}
+                    <div className="p-4 rounded-xl border border-border bg-card space-y-2.5">
+                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
+                        Professional Portals
+                      </h3>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {studentDetail.githubUrl ? (
+                          <a
+                            href={studentDetail.githubUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-foreground hover:border-primary hover:text-primary transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            GitHub Profile
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">No GitHub linked</span>
+                        )}
+                        {studentDetail.linkedinUrl && (
+                          <a
+                            href={studentDetail.linkedinUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-foreground hover:border-primary hover:text-primary transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            LinkedIn Profile
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* Tab 2: Applications & Drives */}
+                  <TabsContent value="drives" className="space-y-3 pt-3">
+                    {studentDetail.applications && studentDetail.applications.length > 0 ? (
+                      studentDetail.applications.map((app) => (
+                        <div
+                          key={app.id}
+                          className="p-3.5 rounded-xl border border-border bg-card hover:border-primary/40 transition-colors space-y-2"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="font-bold text-xs text-foreground">
+                                {app.drive?.companyName || app.internship?.companyName || "Campus Opportunity"}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {app.drive?.jobRole || app.internship?.roleTitle}
+                              </div>
+                            </div>
+                            <Badge
+                              variant={
+                                app.status === "SELECTED"
+                                  ? "success"
+                                  : app.status === "INTERVIEW"
+                                  ? "info"
+                                  : app.status === "SHORTLISTED"
+                                  ? "warning"
+                                  : "outline"
+                              }
+                            >
+                              {app.status}
+                            </Badge>
+                          </div>
+                          {app.drive?.packageCtc && (
+                            <div className="text-[11px] text-primary font-semibold">
+                              CTC: ₹{app.drive.packageCtc} LPA
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center border border-dashed border-border rounded-xl space-y-1">
+                        <Briefcase className="h-6 w-6 text-muted-foreground/40 mx-auto" />
+                        <div className="text-xs font-semibold text-foreground">No applications recorded</div>
+                        <p className="text-[11px] text-muted-foreground">
+                          This student has not yet applied to any campus placement drives.
+                        </p>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Tab 3: Skills & Resumes */}
+                  <TabsContent value="skills" className="space-y-4 pt-3">
+                    {/* Skills Tag Cloud */}
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                        Technical Competencies
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {studentDetail.skills.length > 0 ? (
+                          studentDetail.skills.map((skill) => (
+                            <Badge
+                              key={skill}
+                              variant="secondary"
+                              className="text-xs font-medium"
+                            >
+                              {skill}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No verified skills entered.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Resumes */}
+                    <div className="space-y-2 pt-2 border-t border-border">
+                      <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                        Verified CV / Resumes
+                      </span>
+                      {studentDetail.resumes && studentDetail.resumes.length > 0 ? (
+                        studentDetail.resumes.map((res) => (
+                          <div
+                            key={res.id}
+                            className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
+                          >
+                            <div className="flex items-center gap-2 text-xs">
+                              <FileText className="h-4 w-4 text-primary" />
+                              <span className="font-semibold text-foreground">{res.title}</span>
+                              {res.isDefault && (
+                                <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-primary gap-1">
+                              <Download className="h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-4 rounded-lg bg-muted/20 border border-border text-center text-xs text-muted-foreground">
+                          No PDF resume uploaded yet.
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {/* Drawer Action Footer */}
+              <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-between gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (studentDetail.email) {
+                      navigator.clipboard.writeText(studentDetail.email);
+                      setCopiedNotification(true);
+                      setTimeout(() => setCopiedNotification(false), 2000);
+                    }
+                  }}
+                  className="text-xs gap-1.5"
+                >
+                  <Mail className="h-4 w-4" />
+                  {copiedNotification ? "Email Copied!" : "Copy Email"}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setActiveStudentId(null)}
+                  className="text-xs"
+                >
+                  Close Profile
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      {/* ─── Add Student Modal (Functional) ─── */}
+      <Dialog open={isAddStudentModalOpen} onOpenChange={setIsAddStudentModalOpen}>
+        <DialogContent className="max-w-xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground text-lg">
+              <UserPlus className="h-5 w-5 text-primary" />
+              Register New Student
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Create an official student record in the placement registry. A login account will automatically be provisioned with standard student credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          {addStudentError && (
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{addStudentError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAddStudentSubmit} className="space-y-4 py-1">
+            {/* Row 1: Name */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">First Name *</label>
+                <Input
+                  required
+                  placeholder="e.g. Priya"
+                  value={studentFormData.firstName}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, firstName: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Last Name</label>
+                <Input
+                  placeholder="e.g. Patel"
+                  value={studentFormData.lastName}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, lastName: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Roll Number & Email */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Roll Number *</label>
+                <Input
+                  required
+                  placeholder="e.g. 23CS045"
+                  value={studentFormData.rollNumber}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, rollNumber: e.target.value })}
+                  className="h-9 text-xs font-mono uppercase"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">College Email *</label>
+                <Input
+                  required
+                  type="email"
+                  placeholder="student@college.edu"
+                  value={studentFormData.email}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Row 3: Phone & Department */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Phone Number</label>
+                <Input
+                  placeholder="+91 9876543210"
+                  value={studentFormData.phone}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, phone: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Department / Branch *</label>
+                <Select
+                  value={studentFormData.department}
+                  onValueChange={(val) => setStudentFormData({ ...studentFormData, department: val })}
+                >
+                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                    <SelectValue placeholder="Select Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CSE" className="text-xs">Computer Science (CSE)</SelectItem>
+                    <SelectItem value="IT" className="text-xs">Information Technology (IT)</SelectItem>
+                    <SelectItem value="ECE" className="text-xs">Electronics & Communication (ECE)</SelectItem>
+                    <SelectItem value="MECH" className="text-xs">Mechanical Engineering (MECH)</SelectItem>
+                    <SelectItem value="CIVIL" className="text-xs">Civil Engineering (CIVIL)</SelectItem>
+                    <SelectItem value="EE" className="text-xs">Electrical Engineering (EE)</SelectItem>
+                    <SelectItem value="AI & DS" className="text-xs">Artificial Intelligence & DS</SelectItem>
+                    <SelectItem value="MBA" className="text-xs">MBA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Row 4: Batch Year & CGPA */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Graduation Batch</label>
+                <Select
+                  value={String(studentFormData.batchYear)}
+                  onValueChange={(val) => setStudentFormData({ ...studentFormData, batchYear: parseInt(val, 10) })}
+                >
+                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                    <SelectValue placeholder="Batch Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2025" className="text-xs">Batch 2025</SelectItem>
+                    <SelectItem value="2026" className="text-xs">Batch 2026</SelectItem>
+                    <SelectItem value="2027" className="text-xs">Batch 2027</SelectItem>
+                    <SelectItem value="2028" className="text-xs">Batch 2028</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Current CGPA (out of 10) *</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="10"
+                  required
+                  placeholder="e.g. 8.5"
+                  value={studentFormData.cgpa}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, cgpa: e.target.value })}
+                  className="h-9 text-xs font-bold text-primary"
+                />
+              </div>
+            </div>
+
+            {/* Row 5: 10th & 12th % */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">10th Grade Percentage</label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  placeholder="e.g. 92.5"
+                  value={studentFormData.tenthPercentage}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, tenthPercentage: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">12th Grade Percentage</label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  placeholder="e.g. 89.0"
+                  value={studentFormData.twelfthPercentage}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, twelfthPercentage: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Row 6: Backlogs & Status */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Active Backlogs</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={studentFormData.activeBacklogs}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, activeBacklogs: parseInt(e.target.value, 10) || 0 })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Total Backlogs</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={studentFormData.totalBacklogs}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, totalBacklogs: parseInt(e.target.value, 10) || 0 })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">Placement Status</label>
+                <Select
+                  value={studentFormData.placementStatus ? "placed" : "unplaced"}
+                  onValueChange={(val) => setStudentFormData({ ...studentFormData, placementStatus: val === "placed" })}
+                >
+                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unplaced" className="text-xs">Seeking (Unplaced)</SelectItem>
+                    <SelectItem value="placed" className="text-xs">Placed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Row 7: Skills */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">
+                Skills <span className="text-muted-foreground font-normal">(Comma separated)</span>
+              </label>
+              <Input
+                placeholder="e.g. Python, React.js, SQL, Docker"
+                value={studentFormData.skills}
+                onChange={(e) => setStudentFormData({ ...studentFormData, skills: e.target.value })}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddStudentModalOpen(false)}
+                disabled={isSubmittingStudent}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingStudent}
+                className="text-xs gap-1.5"
+              >
+                {isSubmittingStudent ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Registering Student...
+                  </>
+                ) : (
+                  <>Register Student</>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Bulk Import Students Dialog ─── */}
+      <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
+        <DialogContent className="max-w-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <FileSpreadsheet className="h-5 w-5 text-primary" />
+              Bulk Import Students via CSV
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Upload a standard university CSV file to register or update student cohorts. Accounts will automatically be provisioned with the standard temporary password.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Template Download Prompt */}
+            <div className="p-3.5 rounded-xl bg-secondary/50 border border-secondary flex items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <div className="font-bold text-foreground">Need the standardized CSV format?</div>
+                <div className="text-muted-foreground text-[11px]">
+                  Download our pre-formatted spreadsheet template with all required NAAC/NIRF registry columns.
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadSampleCsv}
+                className="h-8 text-xs gap-1.5 shrink-0 font-semibold"
+              >
+                <Download className="h-3.5 w-3.5 text-primary" />
+                Template
+              </Button>
+            </div>
+
+            {/* File Upload Zone */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-border hover:border-primary hover:bg-accent/20 transition-all rounded-xl p-6 text-center cursor-pointer space-y-2"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleCsvFileChange}
+              />
+              <div className="h-10 w-10 rounded-full bg-muted text-muted-foreground flex items-center justify-center mx-auto">
+                <Upload className="h-5 w-5" />
+              </div>
+              <div className="text-xs font-semibold text-foreground">
+                {csvFile ? csvFile.name : "Click to select or drag & drop student CSV"}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Supports .csv files up to 5MB (UTF-8 encoding)
+              </p>
+            </div>
+
+            {/* Status & Error feedback */}
+            {importStatusMessage && (
+              <div
+                className={cn(
+                  "p-3 rounded-lg text-xs font-medium flex items-center gap-2",
+                  importStatusMessage.type === "success"
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                    : "bg-destructive/10 text-destructive border border-destructive/20"
+                )}
+              >
+                {importStatusMessage.type === "success" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                )}
+                <span>{importStatusMessage.text}</span>
+              </div>
+            )}
+
+            {/* Preview of Parsed Rows */}
+            {parsedRows.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-foreground">
+                  <span>Preview ({parsedRows.length} students found in file):</span>
+                </div>
+                <div className="border border-border rounded-lg max-h-40 overflow-y-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-muted/40 border-b border-border text-muted-foreground">
+                      <tr>
+                        <th className="p-2 text-left">Roll No</th>
+                        <th className="p-2 text-left">Name</th>
+                        <th className="p-2 text-left">Email</th>
+                        <th className="p-2 text-left">Branch</th>
+                        <th className="p-2 text-left">CGPA</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {parsedRows.slice(0, 4).map((row, idx) => (
+                        <tr key={idx} className="hover:bg-muted/20">
+                          <td className="p-2 font-mono font-semibold">{row.rollNumber}</td>
+                          <td className="p-2">{row.firstName} {row.lastName}</td>
+                          <td className="p-2 text-muted-foreground">{row.email}</td>
+                          <td className="p-2">{row.department}</td>
+                          <td className="p-2 font-bold text-primary">{row.cgpa}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
+            <Button
+              variant="outline"
+              onClick={() => setIsImportModalOpen(false)}
+              disabled={isImporting}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkImportSubmit}
+              disabled={parsedRows.length === 0 || isImporting}
+              className="text-xs gap-1.5"
+            >
+              {isImporting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Importing {parsedRows.length} Students...
+                </>
+              ) : (
+                <>Import {parsedRows.length} Students</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

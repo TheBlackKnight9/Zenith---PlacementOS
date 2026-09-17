@@ -1,0 +1,364 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// ENUMS
+// -------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  TPO
+}
+
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  SHORTLISTED
+  INTERVIEW
+  SELECTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum DriveStatus {
+  UPCOMING
+  ACTIVE
+  CLOSED
+  COMPLETED
+}
+
+enum InterviewMode {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+// -------------------------------------------------------------
+// USER & AUTHENTICATION
+// -------------------------------------------------------------
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique @db.VarChar(255)
+  passwordHash String        @map("password_hash") @db.VarChar(255)
+  role         Role          @default(STUDENT)
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  student      Student?
+  tpoProfile   TpoProfile?
+  notifications Notification[]
+
+  @@map("users")
+}
+
+// -------------------------------------------------------------
+// STUDENT & TPO PROFILES
+// -------------------------------------------------------------
+
+model Student {
+  id                String            @id @default(uuid()) @db.Uuid
+  userId            String            @unique @map("user_id") @db.Uuid
+  rollNumber        String            @unique @map("roll_number") @db.VarChar(50)
+  firstName         String            @map("first_name") @db.VarChar(100)
+  lastName          String            @map("last_name") @db.VarChar(100)
+  phone             String?           @db.VarChar(20)
+  department        String            @db.VarChar(100)
+  batchYear         Int               @map("batch_year")
+  cgpa              Decimal           @db.Decimal(4, 2)
+  tenthPercentage   Decimal?          @map("tenth_percentage") @db.Decimal(5, 2)
+  twelfthPercentage Decimal?          @map("twelfth_percentage") @db.Decimal(5, 2)
+  activeBacklogs    Int               @default(0) @map("active_backlogs")
+  totalBacklogs     Int               @default(0) @map("total_backlogs")
+  placementStatus   Boolean           @default(false) @map("placement_status")
+  bio               String?           @db.Text
+  githubUrl         String?           @map("github_url") @db.VarChar(255)
+  linkedinUrl       String?           @map("linkedin_url") @db.VarChar(255)
+  portfolioUrl      String?           @map("portfolio_url") @db.VarChar(255)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills            StudentSkill[]
+  applications      Application[]
+  resumes           Resume[]
+  assessmentResults AssessmentResult[]
+
+  @@index([department, batchYear, cgpa, activeBacklogs])
+  @@index([placementStatus])
+  @@map("students")
+}
+
+model TpoProfile {
+  id          String                  @id @default(uuid()) @db.Uuid
+  userId      String                  @unique @map("user_id") @db.Uuid
+  fullName    String                  @map("full_name") @db.VarChar(150)
+  designation String                  @db.VarChar(100)
+  department  String?                 @db.VarChar(100)
+  phone       String?                 @db.VarChar(20)
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
+
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drives      PlacementDrive[]
+  internships InternshipOpportunity[]
+
+  @@map("tpo_profiles")
+}
+
+// -------------------------------------------------------------
+// SKILLS & ASSESSMENTS
+// -------------------------------------------------------------
+
+model Skill {
+  id        String         @id @default(uuid()) @db.Uuid
+  name      String         @unique @db.VarChar(100)
+  category  String?        @db.VarChar(50)
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  students  StudentSkill[]
+
+  @@map("skills")
+}
+
+model StudentSkill {
+  id          String   @id @default(uuid()) @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  skillId     String   @map("skill_id") @db.Uuid
+  proficiency String   @default("INTERMEDIATE") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill       Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, skillId])
+  @@map("student_skills")
+}
+
+model SkillAssessment {
+  id               String               @id @default(uuid()) @db.Uuid
+  title            String               @db.VarChar(200)
+  description      String?              @db.Text
+  category         String               @db.VarChar(50)
+  timeLimitMinutes Int                  @default(30) @map("time_limit_minutes")
+  totalQuestions   Int                  @default(10) @map("total_questions")
+  passingScore     Int                  @default(60) @map("passing_score")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  questions        AssessmentQuestion[]
+  results          AssessmentResult[]
+
+  @@map("skill_assessments")
+}
+
+model AssessmentQuestion {
+  id                 String          @id @default(uuid()) @db.Uuid
+  assessmentId       String          @map("assessment_id") @db.Uuid
+  questionText       String          @map("question_text") @db.Text
+  options            Json
+  correctOptionIndex Int             @map("correct_option_index")
+  explanation        String?         @db.Text
+  createdAt          DateTime        @default(now()) @map("created_at")
+
+  assessment         SkillAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("assessment_questions")
+}
+
+model AssessmentResult {
+  id           String          @id @default(uuid()) @db.Uuid
+  studentId    String          @map("student_id") @db.Uuid
+  assessmentId String          @map("assessment_id") @db.Uuid
+  score        Int
+  passed       Boolean
+  answers      Json
+  completedAt  DateTime        @default(now()) @map("completed_at")
+
+  student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assessment   SkillAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, assessmentId])
+  @@map("assessment_results")
+}
+
+// -------------------------------------------------------------
+// PLACEMENT DRIVES & INTERNSHIPS
+// -------------------------------------------------------------
+
+model PlacementDrive {
+  id               String        @id @default(uuid()) @db.Uuid
+  tpoId            String        @map("tpo_id") @db.Uuid
+  companyName      String        @map("company_name") @db.VarChar(200)
+  companyLogo      String?       @map("company_logo") @db.VarChar(255)
+  jobRole          String        @map("job_role") @db.VarChar(150)
+  jobDescription   String        @map("job_description") @db.Text
+  packageCtc       Decimal       @map("package_ctc") @db.Decimal(10, 2)
+  location         String        @db.VarChar(150)
+  eligibleBranches String[]      @map("eligible_branches")
+  minCgpa          Decimal       @default(6.0) @map("min_cgpa") @db.Decimal(4, 2)
+  maxBacklogs      Int           @default(0) @map("max_backlogs")
+  eligibleBatch    Int           @map("eligible_batch")
+  skillsRequired   String[]      @map("skills_required")
+  deadline         DateTime
+  driveDate        DateTime?     @map("drive_date")
+  status           DriveStatus   @default(ACTIVE)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  tpo              TpoProfile    @relation(fields: [tpoId], references: [id])
+  applications     Application[]
+
+  @@index([status, deadline, eligibleBatch])
+  @@map("placement_drives")
+}
+
+model InternshipOpportunity {
+  id                String        @id @default(uuid()) @db.Uuid
+  tpoId             String        @map("tpo_id") @db.Uuid
+  companyName       String        @map("company_name") @db.VarChar(200)
+  companyLogo       String?       @map("company_logo") @db.VarChar(255)
+  roleTitle         String        @map("role_title") @db.VarChar(150)
+  description       String        @db.Text
+  durationMonths    Int           @map("duration_months")
+  stipendAmount     Decimal       @default(0.0) @map("stipend_amount") @db.Decimal(10, 2)
+  location          String        @db.VarChar(150)
+  eligibleBranches  String[]      @map("eligible_branches")
+  minCgpa           Decimal       @default(6.0) @map("min_cgpa") @db.Decimal(4, 2)
+  maxBacklogs       Int           @default(0) @map("max_backlogs")
+  eligibleBatch     Int           @map("eligible_batch")
+  deadline          DateTime
+  hasPpoOpportunity Boolean       @default(false) @map("has_ppo_opportunity")
+  status            DriveStatus   @default(ACTIVE)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  tpo               TpoProfile    @relation(fields: [tpoId], references: [id])
+  applications      Application[]
+
+  @@index([status, deadline, eligibleBatch])
+  @@map("internship_opportunities")
+}
+
+// -------------------------------------------------------------
+// APPLICATIONS & INTERVIEWS (WITH STRICT DATA ISOLATION)
+// -------------------------------------------------------------
+
+model Application {
+  id              String                 @id @default(uuid()) @db.Uuid
+  studentId       String                 @map("student_id") @db.Uuid
+  driveId         String?                @map("drive_id") @db.Uuid
+  internshipId    String?                @map("internship_id") @db.Uuid
+  resumeId        String?                @map("resume_id") @db.Uuid
+  status          ApplicationStatus      @default(APPLIED)
+  // Confidential TPO notes are isolated from student view
+  internalRemarks String?                @map("internal_remarks") @db.Text
+  studentRemarks  String?                @map("student_remarks") @db.Text
+  appliedAt       DateTime               @default(now()) @map("applied_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  student         Student                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  drive           PlacementDrive?        @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  internship      InternshipOpportunity? @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  resume          Resume?                @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  interviews      Interview[]
+  selectionResult SelectionResult?
+
+  @@unique([studentId, driveId])
+  @@unique([studentId, internshipId])
+  @@index([studentId, status, appliedAt])
+  @@index([driveId, status])
+  @@index([internshipId, status])
+  @@map("applications")
+}
+
+model Interview {
+  id               String          @id @default(uuid()) @db.Uuid
+  applicationId    String          @map("application_id") @db.Uuid
+  roundNumber      Int             @default(1) @map("round_number")
+  roundName        String          @map("round_name") @db.VarChar(100)
+  scheduledAt      DateTime        @map("scheduled_at")
+  mode             InterviewMode   @default(ONLINE)
+  venueOrLink      String          @map("venue_or_link") @db.Text
+  instructions     String?         @db.Text
+  status           InterviewStatus @default(SCHEDULED)
+  // Confidential recruiter evaluation is isolated from student view
+  internalFeedback String?         @map("internal_feedback") @db.Text
+  studentFeedback  String?         @map("student_feedback") @db.Text
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  application      Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, scheduledAt])
+  @@map("interviews")
+}
+
+model SelectionResult {
+  id             String      @id @default(uuid()) @db.Uuid
+  applicationId  String      @unique @map("application_id") @db.Uuid
+  companyName    String      @map("company_name") @db.VarChar(200)
+  offeredPackage Decimal     @map("offered_package") @db.Decimal(10, 2)
+  offerLetterUrl String?     @map("offer_letter_url") @db.VarChar(255)
+  offerDate      DateTime    @map("offer_date") @db.Date
+  joiningDate    DateTime?   @map("joining_date") @db.Date
+  isAccepted     Boolean     @default(true) @map("is_accepted")
+  hasJoined      Boolean     @default(false) @map("has_joined")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("selection_results")
+}
+
+// -------------------------------------------------------------
+// RESUMES & NOTIFICATIONS
+// -------------------------------------------------------------
+
+model Resume {
+  id           String        @id @default(uuid()) @db.Uuid
+  studentId    String        @map("student_id") @db.Uuid
+  title        String        @default("Default Resume") @db.VarChar(100)
+  templateName String        @default("modern") @map("template_name") @db.VarChar(50)
+  contentJson  Json          @map("content_json")
+  pdfUrl       String?       @map("pdf_url") @db.VarChar(255)
+  isDefault    Boolean       @default(false) @map("is_default")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@index([studentId, isDefault])
+  @@map("resumes")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @db.VarChar(200)
+  message   String   @db.Text
+  type      String   @default("SYSTEM") @db.VarChar(50)
+  link      String?  @db.VarChar(255)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
