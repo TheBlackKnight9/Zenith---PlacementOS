@@ -367,12 +367,21 @@ export async function createAssessment(req, res, next) {
         passingScore: parseInt(passingScore, 10) || 60,
         isActive: true,
         questions: {
-          create: Array.isArray(questions) ? questions.map(q => ({
-            questionText: q.questionText,
-            options: q.options || [],
-            correctOptionIndex: parseInt(q.correctOptionIndex, 10) || 0,
-            explanation: q.explanation || null
-          })) : []
+          create: Array.isArray(questions) ? questions.map(q => {
+            const isWritten =
+              q.questionType === 'WRITTEN' ||
+              q.type === 'WRITTEN' ||
+              q.correctOptionIndex === -1 ||
+              (!q.options || (Array.isArray(q.options) && q.options.length < 2));
+            return {
+              questionText: q.questionText,
+              options: isWritten
+                ? { type: 'WRITTEN', maxMarks: Number(q.maxMarks || q.marks || 5), sampleAnswer: q.sampleAnswer || q.explanation || '' }
+                : (q.options || []),
+              correctOptionIndex: isWritten ? -1 : (parseInt(q.correctOptionIndex, 10) || 0),
+              explanation: q.explanation || q.sampleAnswer || null
+            };
+          }) : []
         }
       },
       include: {
@@ -387,25 +396,60 @@ export async function createAssessment(req, res, next) {
 }
 
 /**
- * Add Question to Existing Assessment
+ * Add Question to Existing Assessment (Supports MCQ and WRITTEN)
  * POST /api/assessments/:id/questions
  */
 export async function addQuestionToAssessment(req, res, next) {
   try {
     const { id } = req.params;
-    const { questionText, options, correctOptionIndex = 0, explanation } = req.body;
+    const {
+      questionText,
+      questionType = 'MCQ',
+      options = [],
+      correctOptionIndex = 0,
+      explanation,
+      maxMarks = 5,
+      sampleAnswer
+    } = req.body;
 
-    if (!questionText || !options || !Array.isArray(options) || options.length < 2) {
-      return sendError(res, 400, 'Question text and at least 2 options are required', { code: 'INVALID_QUESTION' });
+    if (!questionText || !questionText.trim()) {
+      return sendError(res, 400, 'Question text is required', { code: 'INVALID_QUESTION' });
+    }
+
+    const isWritten =
+      questionType === 'WRITTEN' ||
+      correctOptionIndex === -1 ||
+      (Array.isArray(options) && options.length < 2);
+
+    let finalOptions;
+    let finalCorrectIndex;
+    let finalExplanation = explanation ? explanation.trim() : null;
+
+    if (isWritten) {
+      finalOptions = {
+        type: 'WRITTEN',
+        maxMarks: Number(maxMarks) || 5,
+        sampleAnswer: sampleAnswer ? sampleAnswer.trim() : (finalExplanation || '')
+      };
+      finalCorrectIndex = -1;
+      if (!finalExplanation && sampleAnswer) {
+        finalExplanation = sampleAnswer.trim();
+      }
+    } else {
+      if (!Array.isArray(options) || options.length < 2) {
+        return sendError(res, 400, 'MCQ questions require at least 2 options', { code: 'INVALID_MCQ_OPTIONS' });
+      }
+      finalOptions = options;
+      finalCorrectIndex = parseInt(correctOptionIndex, 10) || 0;
     }
 
     const question = await prisma.assessmentQuestion.create({
       data: {
         assessmentId: id,
         questionText: questionText.trim(),
-        options,
-        correctOptionIndex: parseInt(correctOptionIndex, 10) || 0,
-        explanation: explanation ? explanation.trim() : null
+        options: finalOptions,
+        correctOptionIndex: finalCorrectIndex,
+        explanation: finalExplanation
       }
     });
 
@@ -416,6 +460,112 @@ export async function addQuestionToAssessment(req, res, next) {
     });
 
     return sendSuccess(res, 201, 'Question added successfully', { question });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Bulk Add Questions to Existing Assessment (CSV, JSON, Quick-Paste)
+ * POST /api/assessments/:id/questions/bulk
+ */
+export async function bulkAddQuestionsToAssessment(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return sendError(res, 400, 'Questions must be a non-empty array', { code: 'INVALID_QUESTIONS_ARRAY' });
+    }
+
+    const existingAssessment = await prisma.skillAssessment.findUnique({
+      where: { id }
+    });
+
+    if (!existingAssessment) {
+      return sendError(res, 404, 'Assessment not found', { code: 'ASSESSMENT_NOT_FOUND' });
+    }
+
+    const formattedQuestions = [];
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qText = q.questionText || q.question || '';
+      if (!qText.trim()) continue;
+
+      const isWritten =
+        q.questionType === 'WRITTEN' ||
+        q.type === 'WRITTEN' ||
+        q.type === 'written' ||
+        q.correctOptionIndex === -1 ||
+        (!q.options || (Array.isArray(q.options) && q.options.length < 2));
+
+      let finalOptions;
+      let finalCorrectIndex;
+      let finalExplanation = q.explanation ? String(q.explanation).trim() : null;
+
+      if (isWritten) {
+        finalOptions = {
+          type: 'WRITTEN',
+          maxMarks: Number(q.maxMarks || q.marks || 5),
+          sampleAnswer: q.sampleAnswer ? String(q.sampleAnswer).trim() : (finalExplanation || '')
+        };
+        finalCorrectIndex = -1;
+        if (!finalExplanation && q.sampleAnswer) {
+          finalExplanation = String(q.sampleAnswer).trim();
+        }
+      } else {
+        const rawOpts = Array.isArray(q.options) ? q.options : [];
+        finalOptions = rawOpts.map(opt => String(opt).trim()).filter(Boolean);
+        if (finalOptions.length < 2) {
+          finalOptions = {
+            type: 'WRITTEN',
+            maxMarks: Number(q.maxMarks || q.marks || 5),
+            sampleAnswer: finalExplanation || ''
+          };
+          finalCorrectIndex = -1;
+        } else {
+          finalCorrectIndex = Math.max(0, parseInt(q.correctOptionIndex, 10) || 0);
+          if (finalCorrectIndex >= finalOptions.length) {
+            finalCorrectIndex = 0;
+          }
+        }
+      }
+
+      formattedQuestions.push({
+        assessmentId: id,
+        questionText: qText.trim(),
+        options: finalOptions,
+        correctOptionIndex: finalCorrectIndex,
+        explanation: finalExplanation
+      });
+    }
+
+    if (formattedQuestions.length === 0) {
+      return sendError(res, 400, 'No valid questions found to import', { code: 'NO_VALID_QUESTIONS' });
+    }
+
+    // Insert all questions in batch
+    await prisma.assessmentQuestion.createMany({
+      data: formattedQuestions
+    });
+
+    // Update total questions count on the assessment
+    await prisma.skillAssessment.update({
+      where: { id },
+      data: { totalQuestions: { increment: formattedQuestions.length } }
+    });
+
+    // Fetch the updated questions list to return to the client
+    const allQuestions = await prisma.assessmentQuestion.findMany({
+      where: { assessmentId: id },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    return sendSuccess(res, 201, `Successfully imported ${formattedQuestions.length} questions`, {
+      importedCount: formattedQuestions.length,
+      questions: allQuestions
+    });
   } catch (error) {
     next(error);
   }

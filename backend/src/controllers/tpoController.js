@@ -1,7 +1,16 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
-import { normalizeDepartment, buildStudentDeptFilter } from '../utils/departmentHelper.js';
+import {
+  normalizeDepartment,
+  buildStudentDeptFilter,
+  getAllDepartmentMetadata,
+  getDepartmentCoordinator,
+  addDepartmentMetadata,
+  updateDepartmentMetadata,
+  deleteDepartmentMetadata,
+} from '../utils/departmentHelper.js';
+import { generateRandomPassword, hashPassword } from '../utils/password.js';
 
 /**
  * TPO Dashboard KPI Stats
@@ -274,7 +283,7 @@ export async function getStudents(req, res, next) {
           { rollNumber: 'asc' }
         ],
         include: {
-          user: { select: { email: true } },
+          user: { select: { email: true, plainPassword: true } },
           skills: {
             include: { skill: true }
           },
@@ -295,6 +304,7 @@ export async function getStudents(req, res, next) {
         rollNumber: s.rollNumber,
         name: `${s.firstName} ${s.lastName}`,
         email: s.user.email,
+        plainPassword: s.user?.plainPassword || '',
         phone: s.phone,
         department: s.department,
         batchYear: s.batchYear,
@@ -324,7 +334,7 @@ export async function getStudentById(req, res, next) {
     const student = await prisma.student.findUnique({
       where: { id },
       include: {
-        user: { select: { email: true, createdAt: true } },
+        user: { select: { email: true, plainPassword: true, createdAt: true } },
         skills: { include: { skill: true } },
         resumes: { select: { id: true, title: true, isDefault: true, createdAt: true } },
         applications: {
@@ -348,6 +358,7 @@ export async function getStudentById(req, res, next) {
       lastName: student.lastName,
       name: `${student.firstName} ${student.lastName}`.trim(),
       email: student.user?.email || '',
+      plainPassword: student.user?.plainPassword || '',
       phone: student.phone,
       department: student.department,
       batchYear: student.batchYear,
@@ -385,7 +396,6 @@ export async function bulkImportStudents(req, res, next) {
       return sendError(res, 400, 'Invalid payload: students array is required', { code: 'INVALID_PAYLOAD' });
     }
 
-    const defaultPassword = await bcrypt.hash('Student@12345', 10);
     let importedCount = 0;
     let updatedCount = 0;
     const errors = [];
@@ -404,14 +414,28 @@ export async function bulkImportStudents(req, res, next) {
       }
 
       try {
-        // 1. Find or create User
+        // 1. Find or create User with an 8-character random password (letters, numbers, signs)
+        const assignedPassword = (s.password && String(s.password).trim())
+          ? String(s.password).trim()
+          : generateRandomPassword(8);
+        const passwordHash = await hashPassword(assignedPassword);
+
         let user = await prisma.user.findUnique({ where: { email } });
         if (!user) {
           user = await prisma.user.create({
             data: {
               email,
-              passwordHash: defaultPassword,
+              passwordHash,
+              plainPassword: assignedPassword,
               role: 'STUDENT',
+            }
+          });
+        } else if (!user.plainPassword) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              plainPassword: assignedPassword,
+              passwordHash,
             }
           });
         }
@@ -552,6 +576,12 @@ export async function createStudent(req, res, next) {
       });
     }
 
+    // Generate or use provided password
+    const assignedPassword = (req.body.password && String(req.body.password).trim())
+      ? String(req.body.password).trim()
+      : generateRandomPassword(8);
+    const passwordHash = await hashPassword(assignedPassword);
+
     let user = await prisma.user.findUnique({ where: { email: trimmedEmail } });
     if (user) {
       const userStudent = await prisma.student.findUnique({ where: { userId: user.id } });
@@ -560,12 +590,18 @@ export async function createStudent(req, res, next) {
           code: 'USER_EXISTS'
         });
       }
+      if (!user.plainPassword) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { plainPassword: assignedPassword, passwordHash }
+        });
+      }
     } else {
-      const defaultPassword = await bcrypt.hash('Student@12345', 10);
       user = await prisma.user.create({
         data: {
           email: trimmedEmail,
-          passwordHash: defaultPassword,
+          passwordHash,
+          plainPassword: assignedPassword,
           role: 'STUDENT'
         }
       });
@@ -624,6 +660,7 @@ export async function createStudent(req, res, next) {
         rollNumber: newStudent.rollNumber,
         name: `${newStudent.firstName} ${newStudent.lastName}`.trim(),
         email: user.email,
+        plainPassword: user.plainPassword || assignedPassword,
         phone: newStudent.phone,
         department: newStudent.department,
         batchYear: newStudent.batchYear,
@@ -715,73 +752,6 @@ export async function bulkDeleteStudents(req, res, next) {
   }
 }
 
-// In-Memory store for department faculty coordinators
-const departmentCoordinatorsStore = {
-  CSE: {
-    fullName: "Dr. Arvind K. Swaminathan",
-    designation: "Professor & Faculty Placement Coordinator",
-    email: "arvind.swami@college.edu",
-    phone: "+91 98765 00201",
-    office: "Tech Block A, Room 402",
-    intakeCapacity: 420,
-    targetPlacementRate: 90,
-  },
-  IT: {
-    fullName: "Dr. Meera Nambiar",
-    designation: "Associate Professor & TPO Coordinator",
-    email: "meera.nambiar@college.edu",
-    phone: "+91 98765 00202",
-    office: "Tech Block B, Room 210",
-    intakeCapacity: 180,
-    targetPlacementRate: 85,
-  },
-  ECE: {
-    fullName: "Prof. Rajesh Kumar Verma",
-    designation: "Assistant Professor & Industry Liaison",
-    email: "rajesh.verma@college.edu",
-    phone: "+91 98765 00203",
-    office: "Circuits & Systems Block, Room 105",
-    intakeCapacity: 160,
-    targetPlacementRate: 80,
-  },
-  MECH: {
-    fullName: "Dr. Sandeep Deshpande",
-    designation: "Professor & Core Placements In-Charge",
-    email: "sandeep.d@college.edu",
-    phone: "+91 98765 00204",
-    office: "Mechanical Workshop Block, Room 301",
-    intakeCapacity: 150,
-    targetPlacementRate: 75,
-  },
-  CIVIL: {
-    fullName: "Prof. Ananya Mukherjee",
-    designation: "Associate Professor & TPO Representative",
-    email: "ananya.m@college.edu",
-    phone: "+91 98765 00205",
-    office: "Structural Wing, Room 102",
-    intakeCapacity: 120,
-    targetPlacementRate: 70,
-  },
-  "AI & DS": {
-    fullName: "Dr. Vikramaditya Sen",
-    designation: "Head of AI Lab & Career Lead",
-    email: "vikram.sen@college.edu",
-    phone: "+91 98765 00206",
-    office: "Innovation Hub, Room 501",
-    intakeCapacity: 120,
-    targetPlacementRate: 88,
-  },
-};
-
-let ALL_DEPARTMENT_METADATA = [
-  { code: "CSE", name: "Computer Science & Engineering", icon: "Code", color: "orange" },
-  { code: "IT", name: "Information Technology", icon: "Laptop", color: "blue" },
-  { code: "ECE", name: "Electronics & Communication", icon: "Cpu", color: "purple" },
-  { code: "MECH", name: "Mechanical Engineering", icon: "Cog", color: "amber" },
-  { code: "CIVIL", name: "Civil Engineering", icon: "Building2", color: "emerald" },
-  { code: "AI & DS", name: "Artificial Intelligence & Data Science", icon: "BrainCircuit", color: "rose" },
-];
-
 /**
  * Get Comprehensive Department Placement Analytics
  * GET /api/tpo/departments
@@ -796,7 +766,10 @@ export async function getDepartmentsAnalytics(req, res, next) {
 
     const studentMap = {};
     studentGroups.forEach((g) => {
-      studentMap[g.department.toUpperCase()] = g._count.id;
+      const norm = normalizeDepartment(g.department);
+      if (norm) {
+        studentMap[norm] = (studentMap[norm] || 0) + g._count.id;
+      }
     });
 
     // 2. Fetch all students with selected applications for package stats
@@ -831,14 +804,15 @@ export async function getDepartmentsAnalytics(req, res, next) {
       },
     });
 
-    // 4. Calculate per-department metrics
-    const departments = ALL_DEPARTMENT_METADATA.map((deptMeta) => {
+    // 4. Calculate per-department metrics using centralized metadata
+    const allDeptMeta = getAllDepartmentMetadata();
+    const departments = allDeptMeta.map((deptMeta) => {
       const code = deptMeta.code;
       const deptStudents = allStudents.filter(
-        (s) => s.department.toUpperCase() === code || s.department.toUpperCase() === code.replace(/\s+/g, '')
+        (s) => normalizeDepartment(s.department) === code
       );
 
-      const totalStudents = deptStudents.length > 0 ? deptStudents.length : (code === 'CSE' ? 4 : code === 'IT' ? 1 : code === 'ECE' ? 1 : 1);
+      const totalStudents = deptStudents.length > 0 ? deptStudents.length : (deptMeta.isCustom ? 0 : (code === 'CSE' ? 4 : code === 'IT' ? 1 : code === 'ECE' ? 1 : 1));
       const placedStudents = deptStudents.filter((s) => s.placementStatus).length;
       const eligibleStudents = deptStudents.filter((s) => s.activeBacklogs === 0).length;
 
@@ -860,18 +834,18 @@ export async function getDepartmentsAnalytics(req, res, next) {
       // Default realistic packages if newly seeded
       const avgCtc = packages.length > 0
         ? Number((packages.reduce((a, b) => a + b, 0) / packages.length).toFixed(2))
-        : (code === 'CSE' ? 12.5 : code === 'IT' ? 11.2 : code === 'AI & DS' ? 13.0 : code === 'ECE' ? 9.8 : code === 'MECH' ? 7.6 : 6.8);
+        : (deptMeta.isCustom ? 0 : (code === 'CSE' ? 12.5 : code === 'IT' ? 11.2 : code === 'AI & DS' ? 13.0 : code === 'ECE' ? 9.8 : code === 'MECH' ? 7.6 : 6.8));
 
       const highestCtc = packages.length > 0
         ? Math.max(...packages)
-        : (code === 'CSE' ? 32.0 : code === 'IT' ? 28.0 : code === 'AI & DS' ? 34.0 : code === 'ECE' ? 22.0 : code === 'MECH' ? 14.5 : 12.0);
+        : (deptMeta.isCustom ? 0 : (code === 'CSE' ? 32.0 : code === 'IT' ? 28.0 : code === 'AI & DS' ? 34.0 : code === 'ECE' ? 22.0 : code === 'MECH' ? 14.5 : 12.0));
 
       const topRecruiters = Object.entries(companyCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([name]) => name);
 
-      if (topRecruiters.length === 0) {
+      if (topRecruiters.length === 0 && !deptMeta.isCustom) {
         if (code === 'CSE' || code === 'IT' || code === 'AI & DS') {
           topRecruiters.push('Google', 'Microsoft', 'TCS Ninja');
         } else if (code === 'ECE') {
@@ -883,22 +857,17 @@ export async function getDepartmentsAnalytics(req, res, next) {
 
       // Count drives matching branch
       const matchingDrivesCount = activeDrives.filter(
-        (d) => d.eligibleBranches?.some((b) => b.toUpperCase() === code || b.toUpperCase() === 'ALL')
-      ).length || 4;
+        (d) => d.eligibleBranches?.some((b) => {
+          const normB = normalizeDepartment(b);
+          return normB === code || String(b).toUpperCase() === 'ALL';
+        })
+      ).length || (deptMeta.isCustom ? 0 : 4);
 
       const placementRate = totalStudents > 0
         ? Number(((placedStudents / totalStudents) * 100).toFixed(1))
-        : (code === 'CSE' ? 84.5 : code === 'IT' ? 78.2 : 65.0);
+        : (deptMeta.isCustom ? 0 : (code === 'CSE' ? 84.5 : code === 'IT' ? 78.2 : 65.0));
 
-      const coordinator = departmentCoordinatorsStore[code] || {
-        fullName: "Department Coordinator",
-        designation: "Faculty Placement Representative",
-        email: `tpo.${code.toLowerCase()}@college.edu`,
-        phone: "+91 98765 00000",
-        office: "Faculty Wing",
-        intakeCapacity: 120,
-        targetPlacementRate: 80,
-      };
+      const coordinator = getDepartmentCoordinator(code);
 
       // Top Placed candidates preview
       const topPlacedStudents = deptStudents
@@ -916,6 +885,9 @@ export async function getDepartmentsAnalytics(req, res, next) {
       return {
         code,
         name: deptMeta.name,
+        color: deptMeta.badgeColor || deptMeta.color || 'blue',
+        hexColor: deptMeta.color || '#3b82f6',
+        icon: deptMeta.icon || 'Building2',
         totalStudents,
         placedStudents,
         eligibleStudents,
@@ -956,32 +928,81 @@ export async function getDepartmentsAnalytics(req, res, next) {
 }
 
 /**
- * Update Faculty Coordinator for a Department
+ * Update Faculty Coordinator or Department Details
  * POST /api/tpo/departments/coordinator
  */
 export async function updateDepartmentCoordinator(req, res, next) {
   try {
-    const { departmentCode, fullName, designation, email, phone, office, intakeCapacity, targetPlacementRate } = req.body;
+    const {
+      departmentCode,
+      code,
+      name,
+      fullName,
+      designation,
+      email,
+      phone,
+      office,
+      intakeCapacity,
+      targetPlacementRate,
+    } = req.body;
 
-    const code = String(departmentCode || '').trim().toUpperCase();
-    if (!code) {
+    const targetCode = String(departmentCode || code || '').trim().toUpperCase();
+    if (!targetCode) {
       return sendError(res, 400, 'Department code is required', { code: 'INVALID_DEPARTMENT' });
     }
 
-    departmentCoordinatorsStore[code] = {
-      fullName: fullName || departmentCoordinatorsStore[code]?.fullName || "Faculty Coordinator",
-      designation: designation || departmentCoordinatorsStore[code]?.designation || "Placement Coordinator",
-      email: email || departmentCoordinatorsStore[code]?.email || "",
-      phone: phone || departmentCoordinatorsStore[code]?.phone || "",
-      office: office || departmentCoordinatorsStore[code]?.office || "Faculty Office",
-      intakeCapacity: intakeCapacity ? parseInt(intakeCapacity, 10) : departmentCoordinatorsStore[code]?.intakeCapacity || 120,
-      targetPlacementRate: targetPlacementRate ? parseFloat(targetPlacementRate) : departmentCoordinatorsStore[code]?.targetPlacementRate || 80,
-    };
+    const result = updateDepartmentMetadata(targetCode, {
+      name,
+      fullName,
+      designation,
+      email,
+      phone,
+      office,
+      intakeCapacity,
+      targetPlacementRate,
+    });
 
-    return sendSuccess(res, 200, `Coordinator updated for department ${code}`, {
-      coordinator: departmentCoordinatorsStore[code],
+    return sendSuccess(res, 200, `Department & Coordinator updated for ${targetCode}`, {
+      department: result.department,
+      coordinator: result.coordinator,
     });
   } catch (error) {
+    if (error.message && error.message.includes('not found')) {
+      return sendError(res, 404, error.message, { code: 'NOT_FOUND' });
+    }
+    next(error);
+  }
+}
+
+/**
+ * Update Department Details (Name, Targets, Coordinator)
+ * PUT /api/tpo/departments/:code
+ */
+export async function updateDepartmentDetails(req, res, next) {
+  try {
+    const { code } = req.params;
+    const { name, intakeCapacity, targetPlacementRate, coordinator, fullName, designation, email, phone, office, color, icon } = req.body;
+    const trimmedCode = String(code || '').trim().toUpperCase();
+
+    const result = updateDepartmentMetadata(trimmedCode, {
+      name,
+      intakeCapacity,
+      targetPlacementRate,
+      coordinator,
+      fullName,
+      designation,
+      email,
+      phone,
+      office,
+      color,
+      icon,
+    });
+
+    return sendSuccess(res, 200, `Department ${trimmedCode} updated successfully`, result);
+  } catch (error) {
+    if (error.message && error.message.includes('not found')) {
+      return sendError(res, 404, error.message, { code: 'NOT_FOUND' });
+    }
     next(error);
   }
 }
@@ -1002,6 +1023,9 @@ export async function createDepartment(req, res, next) {
       coordinatorEmail,
       coordinatorPhone,
       coordinatorOffice,
+      coordinator,
+      color,
+      icon,
     } = req.body;
 
     const trimmedCode = String(code || '').trim().toUpperCase();
@@ -1014,24 +1038,7 @@ export async function createDepartment(req, res, next) {
       return sendError(res, 400, 'Department full name is required', { field: 'name' });
     }
 
-    // Check for duplicates
-    const exists = ALL_DEPARTMENT_METADATA.some(
-      (d) => d.code.toUpperCase() === trimmedCode
-    );
-    if (exists) {
-      return sendError(res, 400, `Department with code "${trimmedCode}" already exists`, { field: 'code' });
-    }
-
-    // Add metadata
-    ALL_DEPARTMENT_METADATA.push({
-      code: trimmedCode,
-      name: trimmedName,
-      icon: "Building2",
-      color: "orange",
-    });
-
-    // Add Coordinator
-    departmentCoordinatorsStore[trimmedCode] = {
+    const coordObj = coordinator || {
       fullName: coordinatorFullName?.trim() || "Faculty Coordinator",
       designation: coordinatorDesignation?.trim() || "Placement Coordinator",
       email: coordinatorEmail?.trim() || `coordinator.${trimmedCode.toLowerCase()}@college.edu`,
@@ -1041,12 +1048,25 @@ export async function createDepartment(req, res, next) {
       targetPlacementRate: parseFloat(targetPlacementRate) || 80,
     };
 
+    const newDept = addDepartmentMetadata({
+      code: trimmedCode,
+      name: trimmedName,
+      intakeCapacity,
+      targetPlacementRate,
+      coordinator: coordObj,
+      color: color || '#3b82f6',
+      icon: icon || 'Building2',
+    });
+
     return sendSuccess(res, 201, `Branch "${trimmedCode}" (${trimmedName}) registered successfully`, {
       code: trimmedCode,
       name: trimmedName,
-      coordinator: departmentCoordinatorsStore[trimmedCode],
+      coordinator: getDepartmentCoordinator(trimmedCode),
     });
   } catch (error) {
+    if (error.message && error.message.includes('already exists')) {
+      return sendError(res, 400, error.message, { field: 'code' });
+    }
     next(error);
   }
 }
@@ -1061,11 +1081,10 @@ export async function deleteDepartment(req, res, next) {
     const force = req.query.force === 'true';
     const trimmedCode = String(code || '').trim().toUpperCase();
 
-    const existsIndex = ALL_DEPARTMENT_METADATA.findIndex(
-      (d) => d.code.toUpperCase() === trimmedCode
-    );
-
-    if (existsIndex === -1) {
+    // Check if department exists
+    const allDepts = getAllDepartmentMetadata();
+    const exists = allDepts.some((d) => d.code.toUpperCase() === trimmedCode);
+    if (!exists) {
       return sendError(res, 404, `Department "${trimmedCode}" not found`, { code: 'NOT_FOUND' });
     }
 
@@ -1088,9 +1107,7 @@ export async function deleteDepartment(req, res, next) {
       );
     }
 
-    // Remove from array and coordinator store
-    const removedDept = ALL_DEPARTMENT_METADATA.splice(existsIndex, 1)[0];
-    delete departmentCoordinatorsStore[trimmedCode];
+    const removedDept = deleteDepartmentMetadata(trimmedCode);
 
     return sendSuccess(res, 200, `Branch "${trimmedCode}" (${removedDept.name}) removed successfully`, {
       removedCode: trimmedCode,

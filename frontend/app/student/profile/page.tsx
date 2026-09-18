@@ -16,6 +16,13 @@ import {
   Sparkles,
   Save,
   CheckCircle2,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -38,6 +45,7 @@ interface StudentProfile {
   lastName: string;
   fullName: string;
   email: string;
+  plainPassword?: string | null;
   phone: string | null;
   department: string;
   batchYear: number;
@@ -74,6 +82,57 @@ export default function StudentProfilePage() {
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillProficiency, setNewSkillProficiency] = useState("INTERMEDIATE");
   const [isAddingSkill, setIsAddingSkill] = useState(false);
+
+  // Password Management State
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [passwordSuccessMessage, setPasswordSuccessMessage] = useState("");
+  const [passwordErrorMessage, setPasswordErrorMessage] = useState("");
+  const [copiedCreds, setCopiedCreds] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordErrorMessage("");
+    setPasswordSuccessMessage("");
+
+    if (!passwordForm.newPassword || passwordForm.newPassword.trim().length < 6) {
+      setPasswordErrorMessage("New password must be at least 6 characters long.");
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordErrorMessage("New passwords do not match. Please re-enter.");
+      return;
+    }
+
+    try {
+      setIsUpdatingPassword(true);
+      await apiClient.put<{ plainPassword?: string }>("/students/change-password", {
+        currentPassword: passwordForm.currentPassword || undefined,
+        newPassword: passwordForm.newPassword.trim(),
+      });
+
+      setPasswordSuccessMessage(
+        "Password changed successfully! Your updated password is now active for login and synchronized with your Training & Placement Office (TPO) records."
+      );
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      loadProfile();
+    } catch (err: any) {
+      setPasswordErrorMessage(err.message || "Failed to update password. Please check your credentials.");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   const loadProfile = async () => {
     setIsLoading(true);
@@ -222,7 +281,159 @@ export default function StudentProfilePage() {
         </CardContent>
       </Card>
 
-      {/* 2. Editable Personal & Portfolio Details */}
+      {/* 2. Portal Security & Credentials (Synchronized with TPO) */}
+      <Card className="border-border shadow-xs">
+        <CardHeader className="pb-3 border-b border-border bg-muted/30 rounded-t-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                <KeyRound className="h-5 w-5 text-primary" />
+                Portal Security & Password
+              </CardTitle>
+              <CardDescription>
+                Manage your student login credentials. Changes are synchronized directly with your TPO placement records.
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 font-semibold text-[11px] self-start sm:self-auto gap-1">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              TPO Verified Roster
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 space-y-4">
+          {/* Current Credential Info */}
+          <div className="p-3.5 rounded-xl bg-secondary/40 border border-secondary flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-0.5">
+              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Registered Login Email</span>
+              <span className="font-mono text-xs font-semibold text-foreground">{profile?.email}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Current Active Password</span>
+                <span className="font-mono text-xs font-bold text-foreground">
+                  {showCurrentPassword ? (profile?.plainPassword || "••••••••") : "••••••••"}
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                title={showCurrentPassword ? "Hide password" : "Show password"}
+              >
+                {showCurrentPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] gap-1 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  if (profile?.plainPassword) {
+                    navigator.clipboard.writeText(profile.plainPassword);
+                    setCopiedCreds(true);
+                    setTimeout(() => setCopiedCreds(false), 2000);
+                  }
+                }}
+              >
+                {copiedCreds ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                Copy
+              </Button>
+            </div>
+          </div>
+
+          {passwordSuccessMessage && (
+            <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-medium flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{passwordSuccessMessage}</span>
+            </div>
+          )}
+
+          {passwordErrorMessage && (
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{passwordErrorMessage}</span>
+            </div>
+          )}
+
+          {/* Change Password Form */}
+          <form onSubmit={handleChangePassword} className="space-y-3 pt-2">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              Change Password
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground">Current Password</label>
+                <Input
+                  type="password"
+                  placeholder="Enter current password"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground">New Password *</label>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    placeholder="e.g. rahul123"
+                    value={passwordForm.newPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                    className="h-9 text-xs pr-8"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    title={showNewPassword ? "Hide" : "Show"}
+                  >
+                    {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground">Confirm New Password *</label>
+                <Input
+                  type="password"
+                  required
+                  placeholder="Re-type new password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <p className="text-[11px] text-muted-foreground">
+                Updating your password here will immediately reflect in the TPO dashboard so placement coordinators have matching access records.
+              </p>
+              <Button
+                type="submit"
+                disabled={isUpdatingPassword || !passwordForm.newPassword}
+                className="h-9 px-4 text-xs font-semibold shrink-0 gap-1.5"
+              >
+                {isUpdatingPassword ? (
+                  <>
+                    <Save className="h-3.5 w-3.5 animate-spin" />
+                    Updating & Syncing...
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="h-3.5 w-3.5" />
+                    Update Password
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* 3. Editable Personal & Portfolio Details */}
       <Card className="border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">

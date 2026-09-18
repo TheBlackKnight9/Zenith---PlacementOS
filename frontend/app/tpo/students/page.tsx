@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   Users,
   Search,
@@ -38,6 +39,10 @@ import {
   MoreHorizontal,
   SlidersHorizontal,
   Eye,
+  EyeOff,
+  KeyRound,
+  Lock,
+  ShieldCheck,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
@@ -103,6 +108,7 @@ interface StudentListItem {
   rollNumber: string;
   name: string;
   email: string;
+  plainPassword?: string;
   phone: string | null;
   department: string;
   batchYear: number;
@@ -143,6 +149,28 @@ const CGPA_OPTIONS = [
   { label: "9.0+ CGPA", value: "9.0" },
 ];
 
+function generate8CharPassword() {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnpqrstuvwxyz";
+  const digits = "23456789";
+  const signs = "!@#$%&*";
+  const req = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    signs[Math.floor(Math.random() * signs.length)],
+  ];
+  const all = upper + lower + digits + signs;
+  for (let i = 0; i < 4; i++) {
+    req.push(all[Math.floor(Math.random() * all.length)]);
+  }
+  for (let i = req.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [req[i], req[j]] = [req[j], req[i]];
+  }
+  return req.join("");
+}
+
 export default function StudentsDirectoryPage() {
   const {
     selectedDepartment,
@@ -177,6 +205,8 @@ export default function StudentsDirectoryPage() {
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [studentDetail, setStudentDetail] = useState<StudentDetailData | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [showPasswordInSheet, setShowPasswordInSheet] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
 
   // Add Student Modal State
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
@@ -187,6 +217,7 @@ export default function StudentsDirectoryPage() {
     firstName: "",
     lastName: "",
     email: "",
+    password: "",
     phone: "",
     department: "CSE",
     batchYear: 2027,
@@ -201,7 +232,8 @@ export default function StudentsDirectoryPage() {
 
   // Bulk Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [fileTypeDetected, setFileTypeDetected] = useState<"excel" | "csv" | null>(null);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importStatusMessage, setImportStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -279,6 +311,8 @@ export default function StudentsDirectoryPage() {
     async (studentId: string) => {
       setActiveStudentId(studentId);
       setIsLoadingDetail(true);
+      setShowPasswordInSheet(false);
+      setCopiedPassword(false);
       try {
         const res = await apiClient.get<{ student: StudentDetailData }>(`/tpo/students/${studentId}`);
         setStudentDetail(res.student);
@@ -599,6 +633,7 @@ export default function StudentsDirectoryPage() {
         firstName: studentFormData.firstName,
         lastName: studentFormData.lastName,
         email: studentFormData.email,
+        password: studentFormData.password || undefined,
         phone: studentFormData.phone || undefined,
         department: studentFormData.department,
         batchYear: studentFormData.batchYear,
@@ -619,6 +654,7 @@ export default function StudentsDirectoryPage() {
         firstName: "",
         lastName: "",
         email: "",
+        password: generate8CharPassword(),
         phone: "",
         department: "CSE",
         batchYear: 2027,
@@ -639,12 +675,60 @@ export default function StudentsDirectoryPage() {
     }
   };
 
+  // Export to Excel (.xlsx) Function
+  const exportToExcel = (studentsToExport: StudentListItem[] = students) => {
+    const data = studentsToExport.map((s) => ({
+      "Roll Number": s.rollNumber,
+      "Full Name": s.name,
+      "Email": s.email,
+      "Password": s.plainPassword || "",
+      "Phone": s.phone || "",
+      "Department": s.department,
+      "Batch Year": s.batchYear,
+      "CGPA": Number(s.cgpa.toFixed(2)),
+      "10th Percentage": s.tenthPercentage !== null ? s.tenthPercentage : "",
+      "12th Percentage": s.twelfthPercentage !== null ? s.twelfthPercentage : "",
+      "Active Backlogs": s.activeBacklogs,
+      "Total Backlogs": s.totalBacklogs,
+      "Placement Status": s.placementStatus ? "Placed" : "Unplaced",
+      "Skills": s.skills.join("; "),
+      "Applications Count": s.applicationsCount,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    worksheet["!cols"] = [
+      { wch: 15 }, // Roll Number
+      { wch: 22 }, // Full Name
+      { wch: 28 }, // Email
+      { wch: 16 }, // Password
+      { wch: 16 }, // Phone
+      { wch: 14 }, // Department
+      { wch: 12 }, // Batch Year
+      { wch: 10 }, // CGPA
+      { wch: 16 }, // 10th %
+      { wch: 16 }, // 12th %
+      { wch: 15 }, // Active Backlogs
+      { wch: 15 }, // Total Backlogs
+      { wch: 16 }, // Placement Status
+      { wch: 35 }, // Skills
+      { wch: 18 }, // Applications Count
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+    XLSX.writeFile(
+      workbook,
+      `PlacementOS_Students_${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+  };
+
   // Export to CSV Function
   const exportToCsv = (studentsToExport: StudentListItem[] = students) => {
     const headers = [
       "Roll Number",
       "Full Name",
       "Email",
+      "Password",
       "Phone",
       "Department",
       "Batch Year",
@@ -662,6 +746,7 @@ export default function StudentsDirectoryPage() {
       `"${s.rollNumber}"`,
       `"${s.name}"`,
       `"${s.email}"`,
+      `"${s.plainPassword || ""}"`,
       `"${s.phone || ""}"`,
       `"${s.department}"`,
       s.batchYear,
@@ -686,13 +771,89 @@ export default function StudentsDirectoryPage() {
     document.body.removeChild(link);
   };
 
+  // Download Sample Excel (.xlsx) Template
+  const downloadSampleExcel = () => {
+    const sampleData = [
+      {
+        "Roll Number": "23CS101",
+        "First Name": "Rahul",
+        "Last Name": "Sharma",
+        "Email": "rahul.sharma@college.edu",
+        "Password (Optional)": "K9#m$2pQ",
+        "Phone": "+91 9876543211",
+        "Department": "CSE",
+        "Batch Year": 2027,
+        "CGPA": 8.75,
+        "10th %": 92.5,
+        "12th %": 90.0,
+        "Active Backlogs": 0,
+        "Total Backlogs": 0,
+        "Skills": "Python;React.js;SQL"
+      },
+      {
+        "Roll Number": "23IT102",
+        "First Name": "Anjali",
+        "Last Name": "Deshmukh",
+        "Email": "anjali.d@college.edu",
+        "Password (Optional)": "P8!v$4wZ",
+        "Phone": "+91 9876543212",
+        "Department": "IT",
+        "Batch Year": 2027,
+        "CGPA": 9.10,
+        "10th %": 95.0,
+        "12th %": 94.2,
+        "Active Backlogs": 0,
+        "Total Backlogs": 0,
+        "Skills": "Java;AWS;Data Structures"
+      },
+      {
+        "Roll Number": "23EC103",
+        "First Name": "Karthik",
+        "Last Name": "Menon",
+        "Email": "karthik.m@college.edu",
+        "Password (Optional)": "Z3@k&8rX",
+        "Phone": "+91 9876543213",
+        "Department": "ECE",
+        "Batch Year": 2027,
+        "CGPA": 7.80,
+        "10th %": 88.0,
+        "12th %": 85.5,
+        "Active Backlogs": 0,
+        "Total Backlogs": 1,
+        "Skills": "Embedded C;Python;MATLAB"
+      }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleData);
+    worksheet["!cols"] = [
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 28 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 30 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Student Template");
+    XLSX.writeFile(workbook, "PlacementOS_Student_Import_Template.xlsx");
+  };
+
   // Download Sample CSV Template
   const downloadSampleCsv = () => {
-    const sampleHeaders = "Roll Number,First Name,Last Name,Email,Phone,Department,Batch Year,CGPA,10th %,12th %,Active Backlogs,Total Backlogs,Skills\r\n";
+    const sampleHeaders = "Roll Number,First Name,Last Name,Email,Password (Optional - auto-generated if blank),Phone,Department,Batch Year,CGPA,10th %,12th %,Active Backlogs,Total Backlogs,Skills\r\n";
     const sampleRows = [
-      "23CS101,Rahul,Sharma,rahul.sharma@college.edu,+91 9876543211,CSE,2027,8.75,92.5,90.0,0,0,Python;React.js;SQL",
-      "23IT102,Anjali,Deshmukh,anjali.d@college.edu,+91 9876543212,IT,2027,9.10,95.0,94.2,0,0,Java;AWS;Data Structures",
-      "23EC103,Karthik,Menon,karthik.m@college.edu,+91 9876543213,ECE,2027,7.80,88.0,85.5,0,1,Embedded C;Python;MATLAB",
+      "23CS101,Rahul,Sharma,rahul.sharma@college.edu,K9#m$2pQ,+91 9876543211,CSE,2027,8.75,92.5,90.0,0,0,Python;React.js;SQL",
+      "23IT102,Anjali,Deshmukh,anjali.d@college.edu,P8!v$4wZ,+91 9876543212,IT,2027,9.10,95.0,94.2,0,0,Java;AWS;Data Structures",
+      "23EC103,Karthik,Menon,karthik.m@college.edu,Z3@k&8rX,+91 9876543213,ECE,2027,7.80,88.0,85.5,0,1,Embedded C;Python;MATLAB",
     ].join("\r\n");
 
     const blob = new Blob([sampleHeaders + sampleRows], { type: "text/csv;charset=utf-8;" });
@@ -705,69 +866,180 @@ export default function StudentsDirectoryPage() {
     document.body.removeChild(link);
   };
 
-  // Parse CSV File on upload
-  const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Flexible column finder helper
+  const getFieldValue = (row: Record<string, any>, possibleKeys: string[]): any => {
+    for (const key of possibleKeys) {
+      if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") {
+        return row[key];
+      }
+    }
+    const normalizedKeys: Record<string, string> = {};
+    for (const k of Object.keys(row)) {
+      normalizedKeys[k.toLowerCase().replace(/[^a-z0-9]/g, "")] = k;
+    }
+    for (const key of possibleKeys) {
+      const cleanTarget = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (normalizedKeys[cleanTarget]) {
+        const origKey = normalizedKeys[cleanTarget];
+        const val = row[origKey];
+        if (val !== undefined && val !== null && String(val).trim() !== "") {
+          return val;
+        }
+      }
+    }
+    return undefined;
+  };
+
+  // Student row normalizer
+  const normalizeStudentRow = (row: Record<string, any>) => {
+    const rollNumber = String(
+      getFieldValue(row, ["rollNumber", "rollNo", "roll number", "roll_no", "regNo", "registrationNumber"]) || ""
+    ).trim().toUpperCase();
+
+    const email = String(
+      getFieldValue(row, ["email", "emailAddress", "email address", "email id", "mail"]) || ""
+    ).trim().toLowerCase();
+
+    let firstName = String(getFieldValue(row, ["firstName", "first_name", "first name"]) || "").trim();
+    let lastName = String(getFieldValue(row, ["lastName", "last_name", "last name"]) || "").trim();
+    if (!firstName) {
+      const fullName = String(
+        getFieldValue(row, ["name", "fullName", "full_name", "full name", "studentName", "student name"]) || ""
+      ).trim();
+      if (fullName) {
+        const parts = fullName.split(/\s+/);
+        firstName = parts[0] || "";
+        lastName = parts.slice(1).join(" ") || "";
+      }
+    }
+
+    const rawPassword = getFieldValue(row, [
+      "password",
+      "plainPassword",
+      "password (optional)",
+      "pass",
+      "portalPassword",
+      "studentPassword",
+    ]);
+    const password = rawPassword ? String(rawPassword).trim() : undefined;
+
+    const rawPhone = getFieldValue(row, ["phone", "phoneNumber", "phone number", "mobile", "contact"]);
+    const phone = rawPhone ? String(rawPhone).trim() : null;
+
+    const rawDept = getFieldValue(row, ["department", "branch", "dept", "course"]);
+    const department = rawDept ? String(rawDept).trim().toUpperCase() : "CSE";
+
+    const rawBatch = getFieldValue(row, ["batchYear", "batch", "batch year", "year", "graduationYear"]);
+    const batchYear = rawBatch ? parseInt(String(rawBatch), 10) : 2027;
+
+    const rawCgpa = getFieldValue(row, ["cgpa", "gpa", "score"]);
+    const cgpa = rawCgpa !== undefined && !isNaN(parseFloat(String(rawCgpa))) ? parseFloat(String(rawCgpa)) : 7.0;
+
+    const rawTenth = getFieldValue(row, ["tenthPercentage", "tenth", "10thPercentage", "10th %", "10th", "tenth%"]);
+    const tenthPercentage = rawTenth !== undefined && !isNaN(parseFloat(String(rawTenth))) ? parseFloat(String(rawTenth)) : null;
+
+    const rawTwelfth = getFieldValue(row, ["twelfthPercentage", "twelfth", "12thPercentage", "12th %", "12th", "twelfth%"]);
+    const twelfthPercentage = rawTwelfth !== undefined && !isNaN(parseFloat(String(rawTwelfth))) ? parseFloat(String(rawTwelfth)) : null;
+
+    const rawActive = getFieldValue(row, ["activeBacklogs", "active backlogs", "current backlogs", "backlogs"]);
+    const activeBacklogs = rawActive !== undefined && !isNaN(parseInt(String(rawActive), 10)) ? parseInt(String(rawActive), 10) : 0;
+
+    const rawTotal = getFieldValue(row, ["totalBacklogs", "total backlogs", "history backlogs"]);
+    const totalBacklogs = rawTotal !== undefined && !isNaN(parseInt(String(rawTotal), 10)) ? parseInt(String(rawTotal), 10) : 0;
+
+    const rawSkills = getFieldValue(row, ["skills", "skill", "technologies"]);
+    const skills = rawSkills
+      ? String(rawSkills)
+          .replace(/;/g, ",")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+    return {
+      rollNumber,
+      firstName,
+      lastName,
+      email,
+      password,
+      phone,
+      department,
+      batchYear,
+      cgpa,
+      tenthPercentage,
+      twelfthPercentage,
+      activeBacklogs,
+      totalBacklogs,
+      skills,
+    };
+  };
+
+  // Parse Excel (.xlsx, .xls) or CSV (.csv) File on upload
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setCsvFile(file);
+
+    setImportFile(file);
     setImportStatusMessage(null);
+    setParsedRows([]);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string;
-        const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
-        if (lines.length < 2) {
-          setImportStatusMessage({ type: "error", text: "CSV file is empty or missing data rows." });
-          return;
-        }
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls");
+    const isCsv = fileName.endsWith(".csv");
 
-        const parseLine = (line: string) => {
-          const result: string[] = [];
-          let current = "";
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-              inQuotes = !inQuotes;
-            } else if (char === "," && !inQuotes) {
-              result.push(current.trim());
-              current = "";
-            } else {
-              current += char;
-            }
-          }
-          result.push(current.trim());
-          return result;
-        };
+    if (!isExcel && !isCsv) {
+      setImportStatusMessage({
+        type: "error",
+        text: "Unsupported file type. Please upload an Excel (.xlsx, .xls) or CSV (.csv) file.",
+      });
+      return;
+    }
 
-        const rows: any[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const cols = parseLine(lines[i]);
-          if (cols.length >= 4) {
-            rows.push({
-              rollNumber: cols[0],
-              firstName: cols[1],
-              lastName: cols[2] || "",
-              email: cols[3],
-              phone: cols[4] || null,
-              department: cols[5] || "CSE",
-              batchYear: cols[6] ? parseInt(cols[6], 10) : 2027,
-              cgpa: cols[7] ? parseFloat(cols[7]) : 7.0,
-              tenthPercentage: cols[8] ? parseFloat(cols[8]) : null,
-              twelfthPercentage: cols[9] ? parseFloat(cols[9]) : null,
-              activeBacklogs: cols[10] ? parseInt(cols[10], 10) : 0,
-              totalBacklogs: cols[11] ? parseInt(cols[11], 10) : 0,
-              skills: cols[12] ? cols[12].replace(/;/g, ",").split(",").map((s) => s.trim()) : [],
-            });
-          }
-        }
-        setParsedRows(rows);
-      } catch (parseErr) {
-        setImportStatusMessage({ type: "error", text: "Failed to parse CSV file format." });
+    setFileTypeDetected(isExcel ? "excel" : "csv");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        setImportStatusMessage({
+          type: "error",
+          text: "The uploaded file does not contain any sheets or data.",
+        });
+        return;
       }
-    };
-    reader.readAsText(file);
+
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(workbook.Sheets[firstSheetName], { defval: "" });
+
+      if (!rawRows || rawRows.length === 0) {
+        setImportStatusMessage({
+          type: "error",
+          text: "The uploaded file has no data rows. Please ensure rows exist below the header.",
+        });
+        return;
+      }
+
+      const normalized = rawRows
+        .map((row) => normalizeStudentRow(row))
+        .filter((s) => s.rollNumber && s.email && s.firstName);
+
+      if (normalized.length === 0) {
+        setImportStatusMessage({
+          type: "error",
+          text: "Could not find valid student rows. Required fields: Roll Number, First Name (or Name), and Email.",
+        });
+        return;
+      }
+
+      setParsedRows(normalized);
+    } catch (err: any) {
+      console.error("Error reading file:", err);
+      setImportStatusMessage({
+        type: "error",
+        text: `Failed to read ${isExcel ? "Excel" : "CSV"} file: ${err.message || "Invalid format"}`,
+      });
+    }
   };
 
   // Submit Bulk Import to Server
@@ -792,8 +1064,10 @@ export default function StudentsDirectoryPage() {
       loadStudents();
       setTimeout(() => {
         setIsImportModalOpen(false);
-        setCsvFile(null);
+        setImportFile(null);
+        setFileTypeDetected(null);
         setParsedRows([]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }, 1800);
     } catch (err: any) {
       setImportStatusMessage({
@@ -888,6 +1162,10 @@ export default function StudentsDirectoryPage() {
                   size="sm"
                   onClick={() => {
                     setAddStudentError("");
+                    setStudentFormData((prev) => ({
+                      ...prev,
+                      password: generate8CharPassword(),
+                    }));
                     setIsAddStudentModalOpen(true);
                   }}
                   className="h-9 gap-1.5 text-xs font-semibold rounded-r-none pr-3"
@@ -906,7 +1184,7 @@ export default function StudentsDirectoryPage() {
                       <ChevronDown className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuItem
                       onClick={() => setIsImportModalOpen(true)}
                       className="gap-2.5 text-xs cursor-pointer py-2"
@@ -914,19 +1192,30 @@ export default function StudentsDirectoryPage() {
                       <Upload className="h-4 w-4 text-primary" />
                       <div>
                         <div className="font-semibold text-foreground">Import Students</div>
-                        <div className="text-[10px] text-muted-foreground">Bulk upload via CSV</div>
+                        <div className="text-[10px] text-muted-foreground">Bulk upload via Excel or CSV</div>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => exportToExcel(students)}
+                      disabled={students.length === 0}
+                      className="gap-2.5 text-xs cursor-pointer py-2"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                      <div>
+                        <div className="font-semibold text-foreground">Export as Excel (.xlsx)</div>
+                        <div className="text-[10px] text-muted-foreground">Download formatted spreadsheet</div>
+                      </div>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => exportToCsv(students)}
                       disabled={students.length === 0}
                       className="gap-2.5 text-xs cursor-pointer py-2"
                     >
-                      <Download className="h-4 w-4 text-muted-foreground" />
+                      <FileText className="h-4 w-4 text-blue-600" />
                       <div>
-                        <div className="font-semibold text-foreground">Export Students</div>
-                        <div className="text-[10px] text-muted-foreground">Download CSV dataset</div>
+                        <div className="font-semibold text-foreground">Export as CSV (.csv)</div>
+                        <div className="text-[10px] text-muted-foreground">Download standard CSV dataset</div>
                       </div>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1190,12 +1479,24 @@ export default function StudentsDirectoryPage() {
             variant="ghost"
             onClick={() => {
               const selectedStudents = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+              exportToExcel(selectedStudents);
+            }}
+            className="h-8 text-xs gap-1.5 text-foreground hover:bg-muted"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+            Export Excel
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const selectedStudents = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
               exportToCsv(selectedStudents);
             }}
             className="h-8 text-xs gap-1.5 text-foreground hover:bg-muted"
           >
-            <Download className="h-4 w-4 text-primary" />
-            Export Selected
+            <FileText className="h-4 w-4 text-blue-600" />
+            Export CSV
           </Button>
           <Button
             size="sm"
@@ -1235,43 +1536,19 @@ export default function StudentsDirectoryPage() {
           ) : studentDetail ? (
             <div className="flex flex-col h-full overflow-hidden">
               {/* Header Profile Bar */}
-              <div className="p-6 bg-card border-b border-border space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className="h-12 w-12 rounded-xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center shadow-sm">
-                      {(studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber || "ST").slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-foreground leading-tight">
-                        {studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber}
-                      </h2>
-                      <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                        {studentDetail.rollNumber} • {studentDetail.department} (Batch {studentDetail.batchYear})
-                      </div>
+              <div className="p-6 pr-14 bg-card border-b border-border space-y-3">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-12 w-12 rounded-xl bg-primary text-primary-foreground font-bold text-base flex items-center justify-center shadow-sm shrink-0">
+                    {(studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber || "ST").slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-foreground leading-tight">
+                      {studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber}
+                    </h2>
+                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                      {studentDetail.rollNumber} • {studentDetail.department} (Batch {studentDetail.batchYear})
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setDeleteTarget({
-                        type: "single",
-                        student: {
-                          id: studentDetail.id,
-                          name: studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber,
-                          rollNumber: studentDetail.rollNumber,
-                          email: studentDetail.email,
-                        },
-                      });
-                      setDeleteError(null);
-                      setIsDeleteDialogOpen(true);
-                    }}
-                    className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
-                    title="Remove Student"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove
-                  </Button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1336,6 +1613,91 @@ export default function StudentsDirectoryPage() {
                           {studentDetail.twelfthPercentage ? `${studentDetail.twelfthPercentage}%` : "N/A"}
                         </div>
                       </div>
+                    </div>
+
+                    {/* Student Access Credentials Card */}
+                    <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                            <KeyRound className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-bold text-foreground">
+                              Portal Access Credentials
+                            </h3>
+                            <p className="text-[11px] text-muted-foreground">
+                              Student login credentials (TPO roster restricted)
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="bg-background text-primary border-primary/30 text-[10px] font-medium">
+                          TPO Synced
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 rounded-lg border border-border bg-background flex items-center justify-between">
+                          <div className="truncate pr-2">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground block">Login Email</span>
+                            <span className="font-mono text-xs font-medium text-foreground truncate block">{studentDetail.email}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              navigator.clipboard.writeText(studentDetail.email);
+                              setCopiedNotification(true);
+                              setTimeout(() => setCopiedNotification(false), 2000);
+                            }}
+                            title="Copy email"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+
+                        <div className="p-2.5 rounded-lg border border-border bg-background flex items-center justify-between">
+                          <div className="truncate pr-2">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground block">Password</span>
+                            <span className="font-mono text-xs font-semibold text-foreground tracking-wider block">
+                              {showPasswordInSheet
+                                ? (studentDetail.plainPassword || "••••••••")
+                                : "••••••••"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => setShowPasswordInSheet(!showPasswordInSheet)}
+                              title={showPasswordInSheet ? "Hide password" : "Show password"}
+                            >
+                              {showPasswordInSheet ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                if (studentDetail.plainPassword) {
+                                  navigator.clipboard.writeText(studentDetail.plainPassword);
+                                  setCopiedPassword(true);
+                                  setTimeout(() => setCopiedPassword(false), 2000);
+                                }
+                              }}
+                              title="Copy password"
+                            >
+                              {copiedPassword ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        When student changes password from their profile, it automatically updates and syncs here.
+                      </p>
                     </div>
 
                     {/* Contact & Registry Info */}
@@ -1499,29 +1861,59 @@ export default function StudentsDirectoryPage() {
               </div>
 
               {/* Drawer Action Footer */}
-              <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-between gap-3">
+              <div className="p-4 border-t border-border bg-muted/20 flex items-center justify-between gap-3 shrink-0">
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="ghost"
                   onClick={() => {
-                    if (studentDetail.email) {
-                      navigator.clipboard.writeText(studentDetail.email);
-                      setCopiedNotification(true);
-                      setTimeout(() => setCopiedNotification(false), 2000);
-                    }
+                    setDeleteTarget({
+                      type: "single",
+                      student: {
+                        id: studentDetail.id,
+                        name: studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber,
+                        rollNumber: studentDetail.rollNumber,
+                        email: studentDetail.email,
+                      },
+                    });
+                    setDeleteError(null);
+                    setIsDeleteDialogOpen(true);
                   }}
-                  className="text-xs gap-1.5"
+                  className="h-9 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                  title="Remove Student from Placement Roster"
                 >
-                  <Mail className="h-4 w-4" />
-                  {copiedNotification ? "Email Copied!" : "Copy Email"}
+                  <Trash2 className="h-4 w-4" />
+                  Remove Student
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setActiveStudentId(null)}
-                  className="text-xs"
-                >
-                  Close Profile
-                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (studentDetail.email) {
+                        navigator.clipboard.writeText(studentDetail.email);
+                        setCopiedNotification(true);
+                        setTimeout(() => setCopiedNotification(false), 2000);
+                      }
+                    }}
+                    className="h-9 text-xs gap-1.5"
+                  >
+                    {copiedNotification ? (
+                      <Check className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    {copiedNotification ? "Email Copied!" : "Copy Email"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setActiveStudentId(null)}
+                    className="h-9 text-xs px-4"
+                  >
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -1530,8 +1922,8 @@ export default function StudentsDirectoryPage() {
 
       {/* ─── Add Student Modal (Functional) ─── */}
       <Dialog open={isAddStudentModalOpen} onOpenChange={setIsAddStudentModalOpen}>
-        <DialogContent className="max-w-xl p-6">
-          <DialogHeader>
+        <DialogContent className="max-w-xl p-0 max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="p-6 pb-4 border-b border-border shrink-0 pr-12">
             <DialogTitle className="flex items-center gap-2 text-foreground text-lg">
               <UserPlus className="h-5 w-5 text-primary" />
               Register New Student
@@ -1541,211 +1933,267 @@ export default function StudentsDirectoryPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {addStudentError && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{addStudentError}</span>
-            </div>
-          )}
+          <form onSubmit={handleAddStudentSubmit} className="flex flex-col flex-1 overflow-hidden">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {addStudentError && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{addStudentError}</span>
+                </div>
+              )}
 
-          <form onSubmit={handleAddStudentSubmit} className="space-y-4 py-1">
-            {/* Row 1: Name */}
-            <div className="grid grid-cols-2 gap-3">
+              {/* Row 1: Name */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">First Name *</label>
+                  <Input
+                    required
+                    placeholder="e.g. Priya"
+                    value={studentFormData.firstName}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, firstName: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Last Name</label>
+                  <Input
+                    placeholder="e.g. Patel"
+                    value={studentFormData.lastName}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, lastName: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Roll Number & Email */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Roll Number *</label>
+                  <Input
+                    required
+                    placeholder="e.g. 23CS045"
+                    value={studentFormData.rollNumber}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, rollNumber: e.target.value })}
+                    className="h-9 text-xs font-mono uppercase"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">College Email *</label>
+                  <Input
+                    required
+                    type="email"
+                    placeholder="student@college.edu"
+                    value={studentFormData.email}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Row 2.5: Assigned Login Password */}
+              <div className="space-y-1.5 p-3 rounded-xl border border-primary/20 bg-primary/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <KeyRound className="h-3.5 w-3.5 text-primary" />
+                    Assigned Student Password (8 digits/chars)
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-primary hover:text-primary gap-1"
+                    onClick={() =>
+                      setStudentFormData({
+                        ...studentFormData,
+                        password: generate8CharPassword(),
+                      })
+                    }
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Regenerate
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={studentFormData.password || ""}
+                    onChange={(e) =>
+                      setStudentFormData({ ...studentFormData, password: e.target.value })
+                    }
+                    placeholder="Auto-generated 8-character password"
+                    className="h-8 text-xs font-mono font-semibold text-foreground tracking-wider bg-background"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs shrink-0"
+                    onClick={() => {
+                      if (studentFormData.password) {
+                        navigator.clipboard.writeText(studentFormData.password);
+                        setCopiedNotification(true);
+                        setTimeout(() => setCopiedNotification(false), 2000);
+                      }
+                    }}
+                    title="Copy password"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Only students added here can log in. The student can later change their password from their profile, which will sync back here.
+                </p>
+              </div>
+
+              {/* Row 3: Phone & Department */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Phone Number</label>
+                  <Input
+                    placeholder="+91 9876543210"
+                    value={studentFormData.phone}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, phone: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Department / Branch *</label>
+                  <Select
+                    value={studentFormData.department}
+                    onValueChange={(val) => setStudentFormData({ ...studentFormData, department: val })}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                      <SelectValue placeholder="Select Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map((dept) => (
+                        <SelectItem key={dept.code} value={dept.code} className="text-xs">
+                          {dept.name} ({dept.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Row 4: Batch Year & CGPA */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Graduation Batch</label>
+                  <Select
+                    value={String(studentFormData.batchYear)}
+                    onValueChange={(val) => setStudentFormData({ ...studentFormData, batchYear: parseInt(val, 10) })}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                      <SelectValue placeholder="Batch Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2025" className="text-xs">Batch 2025</SelectItem>
+                      <SelectItem value="2026" className="text-xs">Batch 2026</SelectItem>
+                      <SelectItem value="2027" className="text-xs">Batch 2027</SelectItem>
+                      <SelectItem value="2028" className="text-xs">Batch 2028</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Current CGPA (out of 10) *</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="10"
+                    required
+                    placeholder="e.g. 8.5"
+                    value={studentFormData.cgpa}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, cgpa: e.target.value })}
+                    className="h-9 text-xs font-bold text-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Row 5: 10th & 12th % */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">10th Grade Percentage</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 92.5"
+                    value={studentFormData.tenthPercentage}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, tenthPercentage: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">12th Grade Percentage</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    placeholder="e.g. 89.0"
+                    value={studentFormData.twelfthPercentage}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, twelfthPercentage: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Row 6: Backlogs & Status */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Active Backlogs</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={studentFormData.activeBacklogs}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, activeBacklogs: parseInt(e.target.value, 10) || 0 })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Total Backlogs</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={studentFormData.totalBacklogs}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, totalBacklogs: parseInt(e.target.value, 10) || 0 })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Placement Status</label>
+                  <Select
+                    value={studentFormData.placementStatus ? "placed" : "unplaced"}
+                    onValueChange={(val) => setStudentFormData({ ...studentFormData, placementStatus: val === "placed" })}
+                  >
+                    <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unplaced" className="text-xs">Seeking (Unplaced)</SelectItem>
+                      <SelectItem value="placed" className="text-xs">Placed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Row 7: Skills */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">First Name *</label>
+                <label className="text-xs font-semibold text-foreground">
+                  Skills <span className="text-muted-foreground font-normal">(Comma separated)</span>
+                </label>
                 <Input
-                  required
-                  placeholder="e.g. Priya"
-                  value={studentFormData.firstName}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, firstName: e.target.value })}
+                  placeholder="e.g. Python, React.js, SQL, Docker"
+                  value={studentFormData.skills}
+                  onChange={(e) => setStudentFormData({ ...studentFormData, skills: e.target.value })}
                   className="h-9 text-xs"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Last Name</label>
-                <Input
-                  placeholder="e.g. Patel"
-                  value={studentFormData.lastName}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, lastName: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
             </div>
 
-            {/* Row 2: Roll Number & Email */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Roll Number *</label>
-                <Input
-                  required
-                  placeholder="e.g. 23CS045"
-                  value={studentFormData.rollNumber}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, rollNumber: e.target.value })}
-                  className="h-9 text-xs font-mono uppercase"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">College Email *</label>
-                <Input
-                  required
-                  type="email"
-                  placeholder="student@college.edu"
-                  value={studentFormData.email}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Row 3: Phone & Department */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Phone Number</label>
-                <Input
-                  placeholder="+91 9876543210"
-                  value={studentFormData.phone}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, phone: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Department / Branch *</label>
-                <Select
-                  value={studentFormData.department}
-                  onValueChange={(val) => setStudentFormData({ ...studentFormData, department: val })}
-                >
-                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
-                    <SelectValue placeholder="Select Department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept.code} value={dept.code} className="text-xs">
-                        {dept.name} ({dept.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Row 4: Batch Year & CGPA */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Graduation Batch</label>
-                <Select
-                  value={String(studentFormData.batchYear)}
-                  onValueChange={(val) => setStudentFormData({ ...studentFormData, batchYear: parseInt(val, 10) })}
-                >
-                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
-                    <SelectValue placeholder="Batch Year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2025" className="text-xs">Batch 2025</SelectItem>
-                    <SelectItem value="2026" className="text-xs">Batch 2026</SelectItem>
-                    <SelectItem value="2027" className="text-xs">Batch 2027</SelectItem>
-                    <SelectItem value="2028" className="text-xs">Batch 2028</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Current CGPA (out of 10) *</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="10"
-                  required
-                  placeholder="e.g. 8.5"
-                  value={studentFormData.cgpa}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, cgpa: e.target.value })}
-                  className="h-9 text-xs font-bold text-primary"
-                />
-              </div>
-            </div>
-
-            {/* Row 5: 10th & 12th % */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">10th Grade Percentage</label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  placeholder="e.g. 92.5"
-                  value={studentFormData.tenthPercentage}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, tenthPercentage: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">12th Grade Percentage</label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  placeholder="e.g. 89.0"
-                  value={studentFormData.twelfthPercentage}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, twelfthPercentage: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Row 6: Backlogs & Status */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Active Backlogs</label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={studentFormData.activeBacklogs}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, activeBacklogs: parseInt(e.target.value, 10) || 0 })}
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Total Backlogs</label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={studentFormData.totalBacklogs}
-                  onChange={(e) => setStudentFormData({ ...studentFormData, totalBacklogs: parseInt(e.target.value, 10) || 0 })}
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-foreground">Placement Status</label>
-                <Select
-                  value={studentFormData.placementStatus ? "placed" : "unplaced"}
-                  onValueChange={(val) => setStudentFormData({ ...studentFormData, placementStatus: val === "placed" })}
-                >
-                  <SelectTrigger className="w-full h-9 text-xs bg-background border-input">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unplaced" className="text-xs">Seeking (Unplaced)</SelectItem>
-                    <SelectItem value="placed" className="text-xs">Placed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Row 7: Skills */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">
-                Skills <span className="text-muted-foreground font-normal">(Comma separated)</span>
-              </label>
-              <Input
-                placeholder="e.g. Python, React.js, SQL, Docker"
-                value={studentFormData.skills}
-                onChange={(e) => setStudentFormData({ ...studentFormData, skills: e.target.value })}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
+            <DialogFooter className="p-4 border-t border-border bg-muted/20 flex items-center justify-end gap-2 sm:gap-2 shrink-0">
               <Button
                 type="button"
                 variant="outline"
@@ -1775,36 +2223,59 @@ export default function StudentsDirectoryPage() {
       </Dialog>
 
       {/* ─── Bulk Import Students Dialog ─── */}
-      <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
-        <DialogContent className="max-w-2xl p-6">
-          <DialogHeader>
+      <Dialog
+        open={isImportModalOpen}
+        onOpenChange={(open) => {
+          setIsImportModalOpen(open);
+          if (!open) {
+            setImportFile(null);
+            setFileTypeDetected(null);
+            setParsedRows([]);
+            setImportStatusMessage(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl p-0 max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="p-6 pb-4 border-b border-border shrink-0 pr-12">
             <DialogTitle className="flex items-center gap-2 text-foreground">
               <FileSpreadsheet className="h-5 w-5 text-primary" />
-              Bulk Import Students via CSV
+              Bulk Import Students (Excel & CSV)
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Upload a standard university CSV file to register or update student cohorts. Accounts will automatically be provisioned with the standard temporary password.
+              Upload a standard university Excel (.xlsx, .xls) or CSV (.csv) file to register or update student cohorts. Each student will automatically be assigned an 8-digit secure random password (letters, numbers, signs) for login and included in your student directory export.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="p-6 space-y-4 overflow-y-auto flex-1">
             {/* Template Download Prompt */}
-            <div className="p-3.5 rounded-xl bg-secondary/50 border border-secondary flex items-center justify-between gap-3 text-xs">
+            <div className="p-3.5 rounded-xl bg-secondary/50 border border-secondary flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="space-y-0.5">
-                <div className="font-bold text-foreground">Need the standardized CSV format?</div>
+                <div className="font-bold text-foreground">Need a standardized template?</div>
                 <div className="text-muted-foreground text-[11px]">
-                  Download our pre-formatted spreadsheet template with all required NAAC/NIRF registry columns.
+                  Download our pre-formatted spreadsheet template with all required student enrollment fields.
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={downloadSampleCsv}
-                className="h-8 text-xs gap-1.5 shrink-0 font-semibold"
-              >
-                <Download className="h-3.5 w-3.5 text-primary" />
-                Template
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadSampleExcel}
+                  className="h-8 text-xs gap-1.5 font-semibold bg-background hover:bg-muted"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                  Excel Template (.xlsx)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadSampleCsv}
+                  className="h-8 text-xs gap-1.5 font-semibold bg-background hover:bg-muted"
+                >
+                  <FileText className="h-3.5 w-3.5 text-blue-600" />
+                  CSV Template (.csv)
+                </Button>
+              </div>
             </div>
 
             {/* File Upload Zone */}
@@ -1815,18 +2286,24 @@ export default function StudentsDirectoryPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept=".xlsx,.xls,.csv"
                 className="hidden"
-                onChange={handleCsvFileChange}
+                onChange={handleImportFileChange}
               />
               <div className="h-10 w-10 rounded-full bg-muted text-muted-foreground flex items-center justify-center mx-auto">
-                <Upload className="h-5 w-5" />
+                {fileTypeDetected === "excel" ? (
+                  <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                ) : fileTypeDetected === "csv" ? (
+                  <FileText className="h-5 w-5 text-blue-600" />
+                ) : (
+                  <Upload className="h-5 w-5 text-muted-foreground" />
+                )}
               </div>
               <div className="text-xs font-semibold text-foreground">
-                {csvFile ? csvFile.name : "Click to select or drag & drop student CSV"}
+                {importFile ? importFile.name : "Click to select or drag & drop student Excel or CSV file"}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Supports .csv files up to 5MB (UTF-8 encoding)
+                Supports Microsoft Excel (.xlsx, .xls) and CSV (.csv) files up to 10MB
               </p>
             </div>
 
@@ -1854,6 +2331,11 @@ export default function StudentsDirectoryPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-foreground">
                   <span>Preview ({parsedRows.length} students found in file):</span>
+                  {fileTypeDetected && (
+                    <Badge variant="outline" className="text-[10px] uppercase font-semibold">
+                      {fileTypeDetected === "excel" ? "Excel Spreadsheet" : "CSV Document"}
+                    </Badge>
+                  )}
                 </div>
                 <div className="border border-border rounded-lg max-h-40 overflow-y-auto">
                   <table className="w-full text-[11px]">
@@ -1883,10 +2365,17 @@ export default function StudentsDirectoryPage() {
             )}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
+          <DialogFooter className="p-4 border-t border-border bg-muted/20 flex items-center justify-end gap-2 sm:gap-2 shrink-0">
             <Button
               variant="outline"
-              onClick={() => setIsImportModalOpen(false)}
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportFile(null);
+                setFileTypeDetected(null);
+                setParsedRows([]);
+                setImportStatusMessage(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
               disabled={isImporting}
               className="text-xs"
             >

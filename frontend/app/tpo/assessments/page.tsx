@@ -29,6 +29,14 @@ import {
   AlertCircle,
   FileQuestion,
   ChevronRight,
+  UploadCloud,
+  FileSpreadsheet,
+  FileCode,
+  FileText,
+  Download,
+  Copy,
+  PenTool,
+  Edit3,
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api-client";
@@ -61,10 +69,37 @@ interface AssessmentQuestionItem {
   id: string;
   assessmentId?: string;
   questionText: string;
-  options: string[];
+  options: string[] | any;
   correctOptionIndex: number;
   explanation: string | null;
+  questionType?: "MCQ" | "WRITTEN";
+  maxMarks?: number;
+  sampleAnswer?: string | null;
 }
+
+const isWrittenQuestion = (q: AssessmentQuestionItem) => {
+  if (q.questionType === "WRITTEN") return true;
+  if (q.correctOptionIndex === -1) return true;
+  if (q.options && typeof q.options === "object" && !Array.isArray(q.options) && q.options.type === "WRITTEN") return true;
+  if (Array.isArray(q.options) && q.options.length < 2) return true;
+  return false;
+};
+
+const getQuestionMarks = (q: AssessmentQuestionItem) => {
+  if (q.maxMarks) return q.maxMarks;
+  if (q.options && typeof q.options === "object" && !Array.isArray(q.options) && q.options.maxMarks) {
+    return q.options.maxMarks;
+  }
+  return 5;
+};
+
+const getQuestionSampleAnswer = (q: AssessmentQuestionItem) => {
+  if (q.sampleAnswer) return q.sampleAnswer;
+  if (q.options && typeof q.options === "object" && !Array.isArray(q.options) && q.options.sampleAnswer) {
+    return q.options.sampleAnswer;
+  }
+  return q.explanation || "";
+};
 
 interface SkillAssessmentItem {
   id: string;
@@ -344,6 +379,7 @@ export default function TpoAssessmentsPage() {
   const [questionError, setQuestionError] = useState<string | null>(null);
 
   const [newQuestionForm, setNewQuestionForm] = useState({
+    questionType: "MCQ" as "MCQ" | "WRITTEN",
     questionText: "",
     optionA: "",
     optionB: "",
@@ -351,14 +387,25 @@ export default function TpoAssessmentsPage() {
     optionD: "",
     correctOptionIndex: 0,
     explanation: "",
+    maxMarks: 5,
+    sampleAnswer: "",
   });
+
+  // Bulk Import Questions State (CSV, JSON, Quick-Paste)
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [bulkImportTab, setBulkImportTab] = useState<"FILE" | "PASTE">("FILE");
+  const [bulkRawText, setBulkRawText] = useState("");
+  const [parsedBulkQuestions, setParsedBulkQuestions] = useState<AssessmentQuestionItem[]>([]);
+  const [bulkFileError, setBulkFileError] = useState<string | null>(null);
+  const [isImportingBulk, setIsImportingBulk] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   // Test Simulation Modal (Student Exam Preview)
   const [isSimulationOpen, setIsSimulationOpen] = useState(false);
   const [simAssessment, setSimAssessment] = useState<SkillAssessmentItem | null>(null);
   const [simQuestions, setSimQuestions] = useState<AssessmentQuestionItem[]>([]);
   const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
+  const [userAnswers, setUserAnswers] = useState<Record<number, number | string>>({});
   const [simSubmitted, setSimSubmitted] = useState(false);
   const [simTimeRemaining, setSimTimeRemaining] = useState(1800); // 30 mins in seconds
 
@@ -555,7 +602,12 @@ export default function TpoAssessmentsPage() {
     setActiveAssessment(assessment);
     setQuestionError(null);
     setIsAddingQuestion(false);
+    setIsBulkImportOpen(false);
+    setParsedBulkQuestions([]);
+    setBulkRawText("");
+    setBulkFileError(null);
     setNewQuestionForm({
+      questionType: "MCQ",
       questionText: "",
       optionA: "",
       optionB: "",
@@ -563,6 +615,8 @@ export default function TpoAssessmentsPage() {
       optionD: "",
       correctOptionIndex: 0,
       explanation: "",
+      maxMarks: 5,
+      sampleAnswer: "",
     });
 
     try {
@@ -582,7 +636,406 @@ export default function TpoAssessmentsPage() {
     setIsManageQuestionsOpen(true);
   };
 
-  // Add Question to Assessment
+  // Download Sample CSV Template
+  const downloadCsvTemplate = () => {
+    const csvContent =
+      `Type,Question,OptionA,OptionB,OptionC,OptionD,CorrectOption,Marks,Explanation_Or_SampleAnswer\n` +
+      `MCQ,"What is the worst-case time complexity of QuickSort?","O(N)","O(N log N)","O(N^2)","O(1)",C,1,"When pivot chosen is consistently the extreme element"\n` +
+      `MCQ,"Which SQL constraint uniquely identifies each record in a database table?","FOREIGN KEY","UNIQUE","PRIMARY KEY","CHECK",C,1,"A PRIMARY KEY uniquely identifies each row"\n` +
+      `WRITTEN,"Explain the CAP Theorem in distributed database systems and the trade-offs involved.",,,,,5,"Consistency, Availability, and Partition tolerance: networks can partition, forcing distributed systems to choose consistency or availability."\n` +
+      `WRITTEN,"Write an algorithm or function to detect a cycle in a singly linked list with O(1) memory.",,,,,10,"Use Floyd's Cycle-Finding Algorithm (Tortoise and Hare) with two pointers moving at speed 1 and 2."`;
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "assessment_questions_template.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download Sample JSON Template
+  const downloadJsonTemplate = () => {
+    const jsonContent = JSON.stringify(
+      [
+        {
+          questionText: "What is the worst-case time complexity of searching in a Balanced Binary Search Tree?",
+          questionType: "MCQ",
+          options: ["O(1)", "O(log N)", "O(N)", "O(N log N)"],
+          correctOptionIndex: 1,
+          explanation: "In a balanced BST, height is O(log N).",
+          marks: 1,
+        },
+        {
+          questionText: "Which HTTP method is idempotent according to REST architecture standards?",
+          questionType: "MCQ",
+          options: ["POST", "PUT", "PATCH", "CONNECT"],
+          correctOptionIndex: 1,
+          explanation: "PUT is idempotent because multiple identical requests have the same effect.",
+          marks: 1,
+        },
+        {
+          questionText: "Explain the difference between process and thread in Operating Systems with respect to memory and communication.",
+          questionType: "WRITTEN",
+          maxMarks: 5,
+          sampleAnswer: "A process has its own address space, whereas threads within the same process share code, data, and OS resources.",
+        },
+        {
+          questionText: "Write a function to check if a given string has balanced parentheses.",
+          questionType: "WRITTEN",
+          maxMarks: 10,
+          sampleAnswer: "Use a Stack: push opening brackets, pop and verify on matching closing brackets.",
+        },
+      ],
+      null,
+      2
+    );
+
+    const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "assessment_questions_template.json";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // CSV Content Parser
+  const parseCsvContent = (text: string): AssessmentQuestionItem[] => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length <= 1) return [];
+
+    const parseCsvRow = (row: string) => {
+      const result: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+        if (char === '"') {
+          if (inQuotes && row[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const parsed: AssessmentQuestionItem[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvRow(lines[i]);
+      if (cols.length < 2) continue;
+
+      const rawType = cols[0]?.toUpperCase().trim();
+      const questionText = cols[1]?.trim();
+      if (!questionText) continue;
+
+      const isWritten = rawType === "WRITTEN" || rawType === "SUBJECTIVE" || !cols[2];
+
+      if (isWritten) {
+        const marks = Number(cols[7]) || 5;
+        const sampleAnswer = cols[8] || cols[7] || "";
+        parsed.push({
+          id: `parsed-csv-w-${Date.now()}-${i}`,
+          questionText,
+          questionType: "WRITTEN",
+          options: { type: "WRITTEN", maxMarks: marks, sampleAnswer },
+          correctOptionIndex: -1,
+          explanation: sampleAnswer,
+          maxMarks: marks,
+          sampleAnswer,
+        });
+      } else {
+        const optA = cols[2] || "";
+        const optB = cols[3] || "";
+        const optC = cols[4] || "";
+        const optD = cols[5] || "";
+        const rawAns = cols[6]?.toUpperCase().trim();
+
+        let correctIdx = 0;
+        if (rawAns === "B" || rawAns === "1" || rawAns === "2") correctIdx = 1;
+        else if (rawAns === "C" || rawAns === "2" || rawAns === "3") correctIdx = 2;
+        else if (rawAns === "D" || rawAns === "3" || rawAns === "4") correctIdx = 3;
+
+        const options = [optA, optB, optC, optD].filter(Boolean);
+        if (options.length < 2) continue;
+
+        const explanation = cols[8] || null;
+
+        parsed.push({
+          id: `parsed-csv-mcq-${Date.now()}-${i}`,
+          questionText,
+          questionType: "MCQ",
+          options,
+          correctOptionIndex: Math.min(correctIdx, options.length - 1),
+          explanation,
+          maxMarks: Number(cols[7]) || 1,
+        });
+      }
+    }
+    return parsed;
+  };
+
+  // Handle Uploaded File (CSV or JSON)
+  const handleFileProcess = (file: File) => {
+    setBulkFileError(null);
+    const fileName = file.name.toLowerCase();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        if (!text) {
+          setBulkFileError("Uploaded file is empty.");
+          return;
+        }
+
+        if (fileName.endsWith(".json")) {
+          const json = JSON.parse(text);
+          if (!Array.isArray(json)) {
+            setBulkFileError("JSON file must contain an array of question objects.");
+            return;
+          }
+          const parsed: AssessmentQuestionItem[] = json.map((item: any, idx: number) => {
+            const isWritten =
+              item.questionType === "WRITTEN" ||
+              item.type === "WRITTEN" ||
+              item.correctOptionIndex === -1 ||
+              (!item.options || (Array.isArray(item.options) && item.options.length < 2));
+            return {
+              id: `file-q-${Date.now()}-${idx}`,
+              questionText: item.questionText || item.question || `Question ${idx + 1}`,
+              questionType: isWritten ? "WRITTEN" : "MCQ",
+              options: isWritten
+                ? { type: "WRITTEN", maxMarks: item.maxMarks || item.marks || 5, sampleAnswer: item.sampleAnswer || item.explanation || "" }
+                : (item.options || []),
+              correctOptionIndex: isWritten ? -1 : (Number(item.correctOptionIndex) || 0),
+              explanation: item.explanation || item.sampleAnswer || null,
+              maxMarks: Number(item.maxMarks || item.marks) || (isWritten ? 5 : 1),
+              sampleAnswer: item.sampleAnswer || item.explanation || "",
+            };
+          });
+          setParsedBulkQuestions(parsed);
+        } else if (fileName.endsWith(".csv")) {
+          const parsed = parseCsvContent(text);
+          if (parsed.length === 0) {
+            setBulkFileError("No valid questions found in CSV file. Please check format against the sample template.");
+            return;
+          }
+          setParsedBulkQuestions(parsed);
+        } else {
+          setBulkFileError("Unsupported file type. Please upload a .csv or .json file.");
+        }
+      } catch (err: any) {
+        setBulkFileError(`File parse error: ${err.message || "Invalid file structure"}`);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Quick-Paste Plaintext Parser
+  const handleQuickPasteParse = (textToParse?: string) => {
+    const raw = textToParse !== undefined ? textToParse : bulkRawText;
+    if (!raw.trim()) {
+      setBulkFileError("Please paste questions in the text box below.");
+      return;
+    }
+
+    try {
+      setBulkFileError(null);
+      const chunks = raw
+        .split(/(?:^|\n)(?=(?:(?:\d+[\.\)]\s*)|(?:Q(?:uestion)?\s*\d*[\.\:\-]\s*)|(?:\[(?:Written|MCQ)\]\s*)))/i)
+        .map((c) => c.trim())
+        .filter(Boolean);
+
+      if (chunks.length === 0) {
+        setBulkFileError("Could not recognize question format. Please check the sample format.");
+        return;
+      }
+
+      const results: AssessmentQuestionItem[] = [];
+
+      chunks.forEach((chunk, cIdx) => {
+        const isExplicitWritten =
+          /\[written\]/i.test(chunk) ||
+          /^type\s*:\s*written/im.test(chunk) ||
+          /subjective/i.test(chunk);
+
+        const marksMatch = chunk.match(/(?:\(|\b)(\d+)\s*(?:Marks|pts|Points)(?:\)|\b)/i) || chunk.match(/Marks\s*:\s*(\d+)/i);
+        const marks = marksMatch ? Number(marksMatch[1]) : (isExplicitWritten ? 5 : 1);
+
+        const explMatch = chunk.match(/(?:Explanation|Sample\s*Answer|Rubric)\s*[:\-]\s*([^\n]+(?:\n[^\n]+)*)/i);
+        const explanation = explMatch ? explMatch[1].trim() : null;
+
+        const optMatches = Array.from(chunk.matchAll(/(?:^|\n)\s*([A-D])[\)\.\-]\s*([^\n]+)/gi));
+
+        if (!isExplicitWritten && optMatches.length >= 2) {
+          const options = optMatches.map((m) => m[2].trim());
+          const firstOptPos = chunk.search(/(?:^|\n)\s*[A-D][\)\.\-]/i);
+          let qText = firstOptPos !== -1 ? chunk.substring(0, firstOptPos).trim() : chunk;
+          qText = qText.replace(/^(?:\d+[\.\)]\s*|Q(?:uestion)?\s*\d*[\.\:\-]\s*|\[MCQ\]\s*)/i, "").trim();
+
+          let correctIdx = 0;
+          const ansMatch = chunk.match(/(?:Ans(?:wer)?|Correct(?:\s*Option)?)\s*[:\-]?\s*([A-D]|\d+)/i);
+          if (ansMatch) {
+            const val = ansMatch[1].toUpperCase();
+            if (val === "B" || val === "1") correctIdx = 1;
+            else if (val === "C" || val === "2") correctIdx = 2;
+            else if (val === "D" || val === "3") correctIdx = 3;
+          }
+
+          results.push({
+            id: `paste-mcq-${Date.now()}-${cIdx}`,
+            questionText: qText,
+            questionType: "MCQ",
+            options,
+            correctOptionIndex: Math.min(correctIdx, options.length - 1),
+            explanation,
+            maxMarks: marks,
+          });
+        } else {
+          let qText = chunk;
+          qText = qText.replace(/^(?:\[(?:Written|Subjective)\]\s*|\d+[\.\)]\s*|Q(?:uestion)?\s*\d*[\.\:\-]\s*)/i, "").trim();
+          if (explMatch && explMatch.index !== undefined) {
+            qText = qText.substring(0, explMatch.index).trim();
+          }
+          const ansInline = qText.match(/(?:Ans(?:wer)?|Solution)\s*[:\-]/i);
+          let sampleAns = explanation || "";
+          if (ansInline && ansInline.index !== undefined) {
+            sampleAns = qText.substring(ansInline.index + ansInline[0].length).trim();
+            qText = qText.substring(0, ansInline.index).trim();
+          }
+          qText = qText.replace(/(?:\(|\b)\d+\s*(?:Marks|pts|Points)(?:\)|\b)/i, "").trim();
+
+          if (qText) {
+            results.push({
+              id: `paste-written-${Date.now()}-${cIdx}`,
+              questionText: qText,
+              questionType: "WRITTEN",
+              options: { type: "WRITTEN", maxMarks: marks, sampleAnswer: sampleAns },
+              correctOptionIndex: -1,
+              explanation: sampleAns,
+              maxMarks: marks,
+              sampleAnswer: sampleAns,
+            });
+          }
+        }
+      });
+
+      if (results.length === 0) {
+        setBulkFileError("No questions could be extracted. Please ensure questions are numbered or formatted properly.");
+        return;
+      }
+
+      setParsedBulkQuestions(results);
+    } catch (err: any) {
+      setBulkFileError(`Parsing failed: ${err.message || "Unknown error"}`);
+    }
+  };
+
+  // Load Sample Text for Quick Paste
+  const handleLoadSamplePaste = () => {
+    const sample =
+`1. What is the time complexity of searching an element in an unsorted array of size N?
+A) O(1)
+B) O(log N)
+C) O(N)
+D) O(N^2)
+Answer: C
+Explanation: In the worst case, every element must be inspected sequentially.
+
+2. Which protocol operates at the Transport Layer of the OSI model?
+A) HTTP
+B) TCP
+C) IP
+D) Ethernet
+Answer: B
+Explanation: TCP and UDP operate at Layer 4 (Transport).
+
+[Written] Explain the difference between optimistic and pessimistic concurrency control in database systems. (5 Marks)
+Answer: Optimistic concurrency assumes transactions rarely conflict and checks at commit time, while pessimistic concurrency locks records beforehand to prevent conflicts.
+
+[Written] Write a function or pseudocode to find the middle node of a singly linked list in a single pass. (10 Marks)
+Answer: Initialize slow and fast pointers at head. Move slow by 1 step and fast by 2 steps until fast reaches end; slow will be at the middle.`;
+
+    setBulkRawText(sample);
+    handleQuickPasteParse(sample);
+  };
+
+  // Submit Bulk Questions to Backend
+  const handleBulkImportSubmit = async () => {
+    if (!activeAssessment || parsedBulkQuestions.length === 0) return;
+    try {
+      setIsImportingBulk(true);
+      setBulkFileError(null);
+
+      const payload = {
+        questions: parsedBulkQuestions.map((q) => ({
+          questionText: q.questionText,
+          questionType: q.questionType,
+          options: q.options,
+          correctOptionIndex: q.correctOptionIndex,
+          explanation: q.explanation,
+          maxMarks: q.maxMarks || 5,
+          sampleAnswer: q.sampleAnswer || q.explanation,
+        })),
+      };
+
+      try {
+        const res = await apiClient.post<{ importedCount: number; questions: AssessmentQuestionItem[] }>(
+          `/assessments/${activeAssessment.id}/questions/bulk`,
+          payload
+        );
+
+        if (res?.questions) {
+          setQuestionsList(res.questions);
+        } else {
+          setQuestionsList((prev) => [...prev, ...parsedBulkQuestions]);
+        }
+      } catch (apiErr) {
+        // Fallback to local state update
+        setQuestionsList((prev) => [...prev, ...parsedBulkQuestions]);
+      }
+
+      setAssessments((prev) =>
+        prev.map((a) =>
+          a.id === activeAssessment.id
+            ? { ...a, totalQuestions: a.totalQuestions + parsedBulkQuestions.length }
+            : a
+        )
+      );
+
+      // Reset bulk state
+      setParsedBulkQuestions([]);
+      setBulkRawText("");
+      setIsBulkImportOpen(false);
+    } catch (err: any) {
+      console.error("Bulk import error:", err);
+      setBulkFileError(err.message || "Failed to import questions.");
+    } finally {
+      setIsImportingBulk(false);
+    }
+  };
+
+  // Remove question from parsed bulk list before saving
+  const handleRemoveParsedQuestion = (index: number) => {
+    setParsedBulkQuestions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Add Single Question to Assessment (Supports MCQ & WRITTEN)
   const handleAddQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAssessment) return;
@@ -592,25 +1045,33 @@ export default function TpoAssessmentsPage() {
       setQuestionError("Question text is required.");
       return;
     }
-    if (!newQuestionForm.optionA.trim() || !newQuestionForm.optionB.trim()) {
-      setQuestionError("At least Option A and Option B are required.");
+
+    const isWritten = newQuestionForm.questionType === "WRITTEN";
+
+    if (!isWritten && (!newQuestionForm.optionA.trim() || !newQuestionForm.optionB.trim())) {
+      setQuestionError("At least Option A and Option B are required for MCQ questions.");
       return;
     }
 
     try {
       setIsSubmittingQuestion(true);
-      const options = [
-        newQuestionForm.optionA.trim(),
-        newQuestionForm.optionB.trim(),
-        newQuestionForm.optionC.trim() || "N/A",
-        newQuestionForm.optionD.trim() || "N/A",
-      ];
+      const options = isWritten
+        ? []
+        : [
+            newQuestionForm.optionA.trim(),
+            newQuestionForm.optionB.trim(),
+            newQuestionForm.optionC.trim() || "N/A",
+            newQuestionForm.optionD.trim() || "N/A",
+          ];
 
       const payload = {
         questionText: newQuestionForm.questionText.trim(),
+        questionType: newQuestionForm.questionType,
         options,
-        correctOptionIndex: Number(newQuestionForm.correctOptionIndex) || 0,
+        correctOptionIndex: isWritten ? -1 : (Number(newQuestionForm.correctOptionIndex) || 0),
         explanation: newQuestionForm.explanation.trim() || null,
+        maxMarks: Number(newQuestionForm.maxMarks) || 5,
+        sampleAnswer: newQuestionForm.sampleAnswer.trim() || newQuestionForm.explanation.trim() || null,
       };
 
       try {
@@ -627,9 +1088,14 @@ export default function TpoAssessmentsPage() {
           id: `q-${Date.now()}`,
           assessmentId: activeAssessment.id,
           questionText: payload.questionText,
-          options: payload.options,
+          questionType: payload.questionType,
+          options: isWritten
+            ? { type: "WRITTEN", maxMarks: payload.maxMarks, sampleAnswer: payload.sampleAnswer }
+            : payload.options,
           correctOptionIndex: payload.correctOptionIndex,
           explanation: payload.explanation,
+          maxMarks: payload.maxMarks,
+          sampleAnswer: payload.sampleAnswer,
         };
         setQuestionsList((prev) => [...prev, mockQ]);
       }
@@ -641,6 +1107,7 @@ export default function TpoAssessmentsPage() {
 
       // Reset form
       setNewQuestionForm({
+        questionType: "MCQ",
         questionText: "",
         optionA: "",
         optionB: "",
@@ -648,6 +1115,8 @@ export default function TpoAssessmentsPage() {
         optionD: "",
         correctOptionIndex: 0,
         explanation: "",
+        maxMarks: 5,
+        sampleAnswer: "",
       });
       setIsAddingQuestion(false);
     } catch (err: any) {
@@ -726,20 +1195,43 @@ export default function TpoAssessmentsPage() {
     return () => clearInterval(interval);
   }, [isSimulationOpen, simSubmitted]);
 
-  // Simulation calculation
+  // Simulation calculation (Mixed MCQ and Written)
   const simResults = useMemo(() => {
     if (!simSubmitted || simQuestions.length === 0) return null;
     let correctCount = 0;
+    let mcqCount = 0;
+    let writtenCount = 0;
+    let writtenAnsweredCount = 0;
+
     simQuestions.forEach((q, idx) => {
-      if (userAnswers[idx] === q.correctOptionIndex) {
-        correctCount++;
+      if (isWrittenQuestion(q)) {
+        writtenCount++;
+        const ans = userAnswers[idx];
+        if (typeof ans === "string" && ans.trim().length > 0) {
+          writtenAnsweredCount++;
+        }
+      } else {
+        mcqCount++;
+        if (userAnswers[idx] === q.correctOptionIndex) {
+          correctCount++;
+        }
       }
     });
-    const percentage = Math.round((correctCount / simQuestions.length) * 100);
+
+    const percentage =
+      mcqCount > 0
+        ? Math.round((correctCount / mcqCount) * 100)
+        : writtenCount > 0
+        ? Math.round((writtenAnsweredCount / writtenCount) * 100)
+        : 100;
+
     const passingScore = simAssessment?.passingScore || 60;
     const passed = percentage >= passingScore;
     return {
       correctCount,
+      mcqCount,
+      writtenCount,
+      writtenAnsweredCount,
       totalCount: simQuestions.length,
       percentage,
       passed,
@@ -1470,22 +1962,326 @@ export default function TpoAssessmentsPage() {
           )}
 
           <div className="space-y-4 pt-1">
-            {/* Action to Toggle Question Creator */}
-            {!isAddingQuestion ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setIsAddingQuestion(true)}
-                className="w-full h-9 border-dashed border-primary/50 text-primary hover:bg-primary/5"
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Add New MCQ Question to this Assessment
-              </Button>
-            ) : (
+            {/* Action Bar to Toggle Question Creation or Bulk Import */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border border-border/80 bg-muted/20">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Badge variant="outline" className="text-xs font-semibold bg-background">
+                  Total: {questionsList.length}
+                </Badge>
+                <Badge variant="secondary" className="text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                  MCQ: {questionsList.filter((q) => !isWrittenQuestion(q)).length}
+                </Badge>
+                <Badge variant="secondary" className="text-[11px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                  Written: {questionsList.filter(isWrittenQuestion).length}
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={isBulkImportOpen ? "default" : "outline"}
+                  onClick={() => {
+                    setIsBulkImportOpen(!isBulkImportOpen);
+                    setIsAddingQuestion(false);
+                  }}
+                  className="h-8 text-xs font-bold gap-1.5"
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  <span>Bulk Upload Bank (CSV / Paste)</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant={isAddingQuestion ? "default" : "outline"}
+                  onClick={() => {
+                    setIsAddingQuestion(!isAddingQuestion);
+                    setIsBulkImportOpen(false);
+                  }}
+                  className="h-8 text-xs font-bold gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Single Question</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* ─── BULK IMPORT PANEL (CSV / JSON / QUICK PASTE) ─── */}
+            {isBulkImportOpen && (
+              <Card className="border-primary/40 bg-card shadow-sm">
+                <CardHeader className="p-4 pb-2 border-b border-border/60">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <UploadCloud className="h-4 w-4 text-primary" />
+                      <span>Bulk Upload Question Bank</span>
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsBulkImportOpen(false)}
+                      className="h-7 text-xs"
+                    >
+                      Close Panel
+                    </Button>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Upload multiple MCQs and Written questions at once using a spreadsheet file or by pasting raw questions text.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="p-4 space-y-4">
+                  {/* Bulk Method Segmented Buttons */}
+                  <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+                    <Button
+                      type="button"
+                      variant={bulkImportTab === "FILE" ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => setBulkImportTab("FILE")}
+                      className="h-8 text-xs gap-1.5"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      <span>Upload File (CSV / JSON)</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={bulkImportTab === "PASTE" ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => setBulkImportTab("PASTE")}
+                      className="h-8 text-xs gap-1.5"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Quick-Paste Plaintext</span>
+                    </Button>
+                  </div>
+
+                  {bulkFileError && (
+                    <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-xs text-destructive flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      <span>{bulkFileError}</span>
+                    </div>
+                  )}
+
+                  {/* TAB 1: FILE UPLOAD */}
+                  {bulkImportTab === "FILE" && (
+                    <div className="space-y-3">
+                      {/* Sample Templates Download Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg bg-muted/30 border border-border/60">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold text-foreground block">
+                            Question Bank Templates
+                          </span>
+                          <span className="text-[11px] text-muted-foreground block">
+                            Download the official template pre-configured with MCQ and Written question examples.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={downloadCsvTemplate}
+                            className="h-7 text-xs gap-1.5 font-semibold"
+                          >
+                            <Download className="h-3 w-3 text-primary" />
+                            <span>Download CSV</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={downloadJsonTemplate}
+                            className="h-7 text-xs gap-1.5 font-semibold"
+                          >
+                            <Download className="h-3 w-3 text-primary" />
+                            <span>Download JSON</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Dropzone / File Picker */}
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragActive(true);
+                        }}
+                        onDragLeave={() => setDragActive(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragActive(false);
+                          if (e.dataTransfer.files?.[0]) {
+                            handleFileProcess(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        className={cn(
+                          "border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2",
+                          dragActive
+                            ? "border-primary bg-primary/5"
+                            : "border-border/80 hover:border-primary/60 bg-muted/10 hover:bg-muted/20"
+                        )}
+                        onClick={() => document.getElementById("bulk-file-input")?.click()}
+                      >
+                        <input
+                          id="bulk-file-input"
+                          type="file"
+                          accept=".csv,.json"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleFileProcess(e.target.files[0]);
+                            }
+                          }}
+                        />
+                        <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                          <FileSpreadsheet className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">
+                            Click to browse or drag & drop question bank file
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Supported formats: <span className="font-semibold text-foreground">.CSV</span>, <span className="font-semibold text-foreground">.JSON</span> (up to 500 questions)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: QUICK-PASTE */}
+                  {bulkImportTab === "PASTE" && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">
+                          Paste Questions (Standard Numbered Format or Written Blocks)
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleLoadSamplePaste}
+                          className="h-7 text-xs gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          <span>Load Sample Questions</span>
+                        </Button>
+                      </div>
+
+                      <Textarea
+                        rows={8}
+                        value={bulkRawText}
+                        onChange={(e) => setBulkRawText(e.target.value)}
+                        placeholder={`1. What is the time complexity of binary search?
+A) O(1)
+B) O(log N)
+C) O(N)
+D) O(N log N)
+Answer: B
+Explanation: Halves search space each step.
+
+[Written] Explain the difference between process and thread in OS. (5 Marks)
+Answer: A process has its own address space, whereas threads share memory within the same process.`}
+                        className="font-mono text-xs resize-none"
+                      />
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleQuickPasteParse()}
+                          className="h-8 text-xs gap-1.5 font-bold"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>Parse Questions ({bulkRawText.split(/\n\s*\d+[\.\)]/g).filter(Boolean).length || 0} Detected)</span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ─── LIVE PARSED QUESTIONS PREVIEW ─── */}
+                  {parsedBulkQuestions.length > 0 && (
+                    <div className="space-y-3 pt-3 border-t border-border/80">
+                      <div className="flex items-center justify-between bg-primary/10 px-3 py-2 rounded-lg border border-primary/20">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                          <span className="text-xs font-bold text-foreground">
+                            Ready to Import: {parsedBulkQuestions.length} Questions
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            ({parsedBulkQuestions.filter((q) => !isWrittenQuestion(q)).length} MCQs, {parsedBulkQuestions.filter(isWrittenQuestion).length} Written)
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={handleBulkImportSubmit}
+                          disabled={isImportingBulk}
+                          className="h-7 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs gap-1.5"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span>{isImportingBulk ? "Importing..." : "Confirm & Import All"}</span>
+                        </Button>
+                      </div>
+
+                      {/* Scrollable list of parsed questions */}
+                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        {parsedBulkQuestions.map((q, pIdx) => {
+                          const isW = isWrittenQuestion(q);
+                          return (
+                            <div
+                              key={q.id || pIdx}
+                              className="p-2.5 rounded-lg border border-border/70 bg-card/60 flex items-start justify-between gap-2 text-xs"
+                            >
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-primary">#{pIdx + 1}</span>
+                                  {isW ? (
+                                    <Badge variant="secondary" className="text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 py-0">
+                                      Written ({getQuestionMarks(q)} Marks)
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 py-0">
+                                      MCQ ({Array.isArray(q.options) ? q.options.length : 0} options)
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="font-medium text-foreground line-clamp-2">
+                                  {q.questionText}
+                                </p>
+                                {isW ? (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1 italic">
+                                    Sample Answer: {getQuestionSampleAnswer(q)}
+                                  </p>
+                                ) : (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1">
+                                    Correct: Option {String.fromCharCode(65 + q.correctOptionIndex)} &bull; {Array.isArray(q.options) ? q.options[q.correctOptionIndex] : ""}
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveParsedQuestion(pIdx)}
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                                title="Remove question from import"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── SINGLE QUESTION CREATOR (MCQ / WRITTEN) ─── */}
+            {isAddingQuestion && (
               <Card className="border-primary/40 bg-primary/5 shadow-xs">
                 <CardHeader className="p-4 pb-2">
-                  <CardTitle className="text-sm font-bold text-foreground flex items-center justify-between">
-                    <span>New MCQ Question</span>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-primary" />
+                      <span>Add Single Question</span>
+                    </CardTitle>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1494,15 +2290,48 @@ export default function TpoAssessmentsPage() {
                     >
                       Cancel
                     </Button>
-                  </CardTitle>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="p-4 pt-2">
                   <form onSubmit={handleAddQuestion} className="space-y-3">
+                    {/* Question Type Toggle */}
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-foreground">Question Text *</label>
+                      <label className="text-xs font-semibold text-foreground">Question Format *</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewQuestionForm({ ...newQuestionForm, questionType: "MCQ" })}
+                          className={cn(
+                            "py-1.5 px-3 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5",
+                            newQuestionForm.questionType === "MCQ"
+                              ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                              : "bg-card text-foreground border-border hover:bg-muted"
+                          )}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Multiple Choice (MCQ)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewQuestionForm({ ...newQuestionForm, questionType: "WRITTEN" })}
+                          className={cn(
+                            "py-1.5 px-3 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5",
+                            newQuestionForm.questionType === "WRITTEN"
+                              ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                              : "bg-card text-foreground border-border hover:bg-muted"
+                          )}
+                        >
+                          <PenTool className="h-3.5 w-3.5" />
+                          <span>Written / Subjective / Coding</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-foreground">Question Statement *</label>
                       <Textarea
-                        placeholder="State the question clearly..."
+                        placeholder="State the problem, scenario, or concept clearly..."
                         rows={2}
                         value={newQuestionForm.questionText}
                         onChange={(e) => setNewQuestionForm({ ...newQuestionForm, questionText: e.target.value })}
@@ -1511,78 +2340,109 @@ export default function TpoAssessmentsPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Option A *</label>
-                        <Input
-                          placeholder="Option A"
-                          value={newQuestionForm.optionA}
-                          onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionA: e.target.value })}
-                          required
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Option B *</label>
-                        <Input
-                          placeholder="Option B"
-                          value={newQuestionForm.optionB}
-                          onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionB: e.target.value })}
-                          required
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Option C</label>
-                        <Input
-                          placeholder="Option C"
-                          value={newQuestionForm.optionC}
-                          onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionC: e.target.value })}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Option D</label>
-                        <Input
-                          placeholder="Option D"
-                          value={newQuestionForm.optionD}
-                          onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionD: e.target.value })}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                    </div>
+                    {/* MCQ FIELDS */}
+                    {newQuestionForm.questionType === "MCQ" ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Option A *</label>
+                            <Input
+                              placeholder="Option A"
+                              value={newQuestionForm.optionA}
+                              onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionA: e.target.value })}
+                              required
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Option B *</label>
+                            <Input
+                              placeholder="Option B"
+                              value={newQuestionForm.optionB}
+                              onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionB: e.target.value })}
+                              required
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Option C</label>
+                            <Input
+                              placeholder="Option C"
+                              value={newQuestionForm.optionC}
+                              onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionC: e.target.value })}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Option D</label>
+                            <Input
+                              placeholder="Option D"
+                              value={newQuestionForm.optionD}
+                              onChange={(e) => setNewQuestionForm({ ...newQuestionForm, optionD: e.target.value })}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Correct Option *</label>
-                        <Select
-                          value={newQuestionForm.correctOptionIndex.toString()}
-                          onValueChange={(val) =>
-                            setNewQuestionForm({ ...newQuestionForm, correctOptionIndex: Number(val) })
-                          }
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0">Option A</SelectItem>
-                            <SelectItem value="1">Option B</SelectItem>
-                            <SelectItem value="2">Option C</SelectItem>
-                            <SelectItem value="3">Option D</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Correct Option *</label>
+                            <Select
+                              value={newQuestionForm.correctOptionIndex.toString()}
+                              onValueChange={(val) =>
+                                setNewQuestionForm({ ...newQuestionForm, correctOptionIndex: Number(val) })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">Option A</SelectItem>
+                                <SelectItem value="1">Option B</SelectItem>
+                                <SelectItem value="2">Option C</SelectItem>
+                                <SelectItem value="3">Option D</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-foreground">Explanation / Solution (Optional)</label>
-                        <Input
-                          placeholder="Why is this the correct answer?"
-                          value={newQuestionForm.explanation}
-                          onChange={(e) => setNewQuestionForm({ ...newQuestionForm, explanation: e.target.value })}
-                          className="h-8 text-xs"
-                        />
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Explanation / Solution (Optional)</label>
+                            <Input
+                              placeholder="Why is this the correct answer?"
+                              value={newQuestionForm.explanation}
+                              onChange={(e) => setNewQuestionForm({ ...newQuestionForm, explanation: e.target.value })}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      /* WRITTEN QUESTION FIELDS */
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-foreground">Allocated Marks</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={newQuestionForm.maxMarks}
+                            onChange={(e) => setNewQuestionForm({ ...newQuestionForm, maxMarks: Number(e.target.value) || 5 })}
+                            className="h-8 text-xs w-32"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-foreground">Model Solution / Evaluation Rubric</label>
+                          <Textarea
+                            rows={3}
+                            placeholder="Expected answer key, key concepts required, or grading criteria for evaluators..."
+                            value={newQuestionForm.sampleAnswer}
+                            onChange={(e) => setNewQuestionForm({ ...newQuestionForm, sampleAnswer: e.target.value })}
+                            className="text-xs"
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="flex justify-end gap-2 pt-2">
                       <Button
@@ -1598,7 +2458,7 @@ export default function TpoAssessmentsPage() {
                         type="submit"
                         size="sm"
                         disabled={isSubmittingQuestion}
-                        className="h-8 text-xs"
+                        className="h-8 text-xs font-bold"
                       >
                         {isSubmittingQuestion ? "Adding..." : "Save to Question Bank"}
                       </Button>
@@ -1608,7 +2468,7 @@ export default function TpoAssessmentsPage() {
               </Card>
             )}
 
-            {/* Questions List */}
+            {/* ─── ACTIVE QUESTIONS LIST (HANDLES BOTH MCQ & WRITTEN) ─── */}
             <div className="space-y-3 pt-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Active Assessment Questions ({questionsList.length})
@@ -1616,58 +2476,95 @@ export default function TpoAssessmentsPage() {
 
               {questionsList.length === 0 ? (
                 <div className="py-8 text-center border rounded-lg border-dashed border-border/80 text-muted-foreground text-xs">
-                  No questions currently attached to this assessment. Use the button above to add questions.
+                  No questions currently attached to this assessment. Use the buttons above to bulk upload or add questions.
                 </div>
               ) : (
-                questionsList.map((q, idx) => (
-                  <Card key={q.id || idx} className="border-border bg-card shadow-2xs">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-semibold text-xs text-foreground leading-relaxed">
-                          <span className="text-primary font-bold mr-1.5">Q{idx + 1}.</span>
-                          {q.questionText}
-                        </span>
-                      </div>
+                questionsList.map((q, idx) => {
+                  const isW = isWrittenQuestion(q);
+                  const marks = getQuestionMarks(q);
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                        {q.options.map((opt, oIdx) => {
-                          const isCorrect = oIdx === q.correctOptionIndex;
-                          const optionLetters = ["A", "B", "C", "D"];
-                          return (
-                            <div
-                              key={oIdx}
-                              className={cn(
-                                "flex items-center justify-between px-3 py-1.5 rounded-md text-xs border transition-colors",
-                                isCorrect
-                                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-medium"
-                                  : "bg-muted/30 border-border/60 text-muted-foreground"
-                              )}
-                            >
-                              <span>
-                                <strong className="mr-1.5">{optionLetters[oIdx]}.</strong>
-                                {opt}
-                              </span>
-                              {isCorrect && (
-                                <Badge className="h-5 px-1.5 text-[10px] bg-emerald-600 hover:bg-emerald-600 text-white gap-0.5">
-                                  <Check className="h-3 w-3" /> Correct
+                  return (
+                    <Card key={q.id || idx} className="border-border bg-card shadow-2xs">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              {isW ? (
+                                <Badge variant="secondary" className="text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 py-0 px-1.5 h-4 gap-1">
+                                  <PenTool className="h-2.5 w-2.5" />
+                                  Written Response
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 py-0 px-1.5 h-4 gap-1">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                  MCQ
                                 </Badge>
                               )}
+                              <span className="text-[10px] text-muted-foreground font-medium">
+                                {marks} {marks === 1 ? "Mark" : "Marks"}
+                              </span>
                             </div>
-                          );
-                        })}
-                      </div>
-
-                      {q.explanation && (
-                        <div className="p-2.5 rounded bg-muted/40 text-[11px] text-muted-foreground border-l-2 border-primary/60">
-                          <span className="font-semibold text-foreground flex items-center gap-1 mb-0.5">
-                            <Sparkles className="h-3 w-3 text-primary" /> Solution Explanation:
-                          </span>
-                          {q.explanation}
+                            <span className="font-semibold text-xs text-foreground leading-relaxed block">
+                              <span className="text-primary font-bold mr-1.5">Q{idx + 1}.</span>
+                              {q.questionText}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))
+
+                        {/* If MCQ: render option cards */}
+                        {!isW && Array.isArray(q.options) && q.options.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            {q.options.map((opt: string, oIdx: number) => {
+                              const isCorrect = oIdx === q.correctOptionIndex;
+                              const optionLetters = ["A", "B", "C", "D", "E", "F"];
+                              return (
+                                <div
+                                  key={oIdx}
+                                  className={cn(
+                                    "flex items-center justify-between px-3 py-1.5 rounded-md text-xs border transition-colors",
+                                    isCorrect
+                                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-medium"
+                                      : "bg-muted/30 border-border/60 text-muted-foreground"
+                                  )}
+                                >
+                                  <span>
+                                    <strong className="mr-1.5">{optionLetters[oIdx] || oIdx + 1}.</strong>
+                                    {opt}
+                                  </span>
+                                  {isCorrect && (
+                                    <Badge className="h-5 px-1.5 text-[10px] bg-emerald-600 hover:bg-emerald-600 text-white gap-0.5">
+                                      <Check className="h-3 w-3" /> Correct
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* If Written: render Model Answer Box */}
+                        {isW && (
+                          <div className="p-2.5 rounded bg-muted/40 text-[11px] text-muted-foreground border-l-2 border-purple-500/60">
+                            <span className="font-semibold text-foreground flex items-center gap-1 mb-0.5">
+                              <Sparkles className="h-3 w-3 text-purple-500" /> Model Answer & Scoring Rubric:
+                            </span>
+                            {getQuestionSampleAnswer(q) || "No rubric provided."}
+                          </div>
+                        )}
+
+                        {/* If MCQ explanation: render Explanation Box */}
+                        {!isW && q.explanation && (
+                          <div className="p-2.5 rounded bg-muted/40 text-[11px] text-muted-foreground border-l-2 border-primary/60">
+                            <span className="font-semibold text-foreground flex items-center gap-1 mb-0.5">
+                              <Sparkles className="h-3 w-3 text-primary" /> Solution Explanation:
+                            </span>
+                            {q.explanation}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </div>
@@ -1746,47 +2643,82 @@ export default function TpoAssessmentsPage() {
               {simQuestions[currentQIndex] && (
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-card border border-border space-y-1">
-                    <span className="text-xs font-bold text-primary tracking-wider uppercase">
-                      Problem Statement {currentQIndex + 1}
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-primary tracking-wider uppercase">
+                        Problem Statement {currentQIndex + 1}
+                      </span>
+                      {isWrittenQuestion(simQuestions[currentQIndex]) ? (
+                        <Badge variant="secondary" className="text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 py-0 gap-1">
+                          <PenTool className="h-2.5 w-2.5" />
+                          Written ({getQuestionMarks(simQuestions[currentQIndex])} Marks)
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 py-0 gap-1">
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          MCQ
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm font-semibold text-foreground leading-relaxed pt-1">
                       {simQuestions[currentQIndex].questionText}
                     </p>
                   </div>
 
-                  {/* Options Radio List */}
-                  <div className="space-y-2.5">
-                    {simQuestions[currentQIndex].options.map((option, optIdx) => {
-                      const isSelected = userAnswers[currentQIndex] === optIdx;
-                      const letters = ["A", "B", "C", "D"];
-                      return (
-                        <div
-                          key={optIdx}
-                          onClick={() => setUserAnswers({ ...userAnswers, [currentQIndex]: optIdx })}
-                          className={cn(
-                            "flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none",
-                            isSelected
-                              ? "bg-primary/10 border-primary shadow-xs"
-                              : "bg-card border-border hover:bg-muted/60"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors",
-                              isSelected
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-muted-foreground border border-border"
-                            )}
-                          >
-                            {letters[optIdx]}
-                          </div>
-                          <span className={cn("text-xs font-medium", isSelected ? "text-foreground font-semibold" : "text-foreground/90")}>
-                            {option}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {/* Written Answer Input or MCQ Options Radio List */}
+                  {isWrittenQuestion(simQuestions[currentQIndex]) ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground flex items-center gap-1.5">
+                          <PenTool className="h-3.5 w-3.5 text-purple-500" />
+                          Written Solution / Code Input
+                        </span>
+                        <span className="text-[11px]">
+                          {typeof userAnswers[currentQIndex] === "string" ? (userAnswers[currentQIndex] as string).length : 0} characters
+                        </span>
+                      </div>
+                      <Textarea
+                        rows={7}
+                        value={typeof userAnswers[currentQIndex] === "string" ? (userAnswers[currentQIndex] as string) : ""}
+                        onChange={(e) => setUserAnswers({ ...userAnswers, [currentQIndex]: e.target.value })}
+                        placeholder="Type your explanation, reasoning, solution code, or analysis here..."
+                        className="text-xs font-mono resize-none bg-card"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {Array.isArray(simQuestions[currentQIndex].options) &&
+                        simQuestions[currentQIndex].options.map((option: string, optIdx: number) => {
+                          const isSelected = userAnswers[currentQIndex] === optIdx;
+                          const letters = ["A", "B", "C", "D", "E", "F"];
+                          return (
+                            <div
+                              key={optIdx}
+                              onClick={() => setUserAnswers({ ...userAnswers, [currentQIndex]: optIdx })}
+                              className={cn(
+                                "flex items-center gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none",
+                                isSelected
+                                  ? "bg-primary/10 border-primary shadow-xs"
+                                  : "bg-card border-border hover:bg-muted/60"
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  "h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors",
+                                  isSelected
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground border border-border"
+                                )}
+                              >
+                                {letters[optIdx] || optIdx + 1}
+                              </div>
+                              <span className={cn("text-xs font-medium", isSelected ? "text-foreground font-semibold" : "text-foreground/90")}>
+                                {option}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1865,51 +2797,115 @@ export default function TpoAssessmentsPage() {
                 </h4>
 
                 {simQuestions.map((q, idx) => {
+                  const isW = isWrittenQuestion(q);
                   const userAnswer = userAnswers[idx];
-                  const isCorrect = userAnswer === q.correctOptionIndex;
-                  const letters = ["A", "B", "C", "D"];
+                  const isCorrect = !isW && userAnswer === q.correctOptionIndex;
+                  const isWrittenAnswered = isW && typeof userAnswer === "string" && userAnswer.trim().length > 0;
+                  const letters = ["A", "B", "C", "D", "E", "F"];
 
                   return (
                     <Card
                       key={idx}
                       className={cn(
                         "border shadow-2xs",
-                        isCorrect ? "border-emerald-500/30 bg-emerald-500/5" : "border-rose-500/30 bg-rose-500/5"
+                        isW
+                          ? "border-purple-500/30 bg-purple-500/5"
+                          : isCorrect
+                          ? "border-emerald-500/30 bg-emerald-500/5"
+                          : "border-rose-500/30 bg-rose-500/5"
                       )}
                     >
                       <CardContent className="p-4 space-y-2.5">
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-xs font-semibold text-foreground">
-                            <span className="font-bold mr-1">Q{idx + 1}.</span> {q.questionText}
-                          </span>
-                          <Badge
-                            variant={isCorrect ? "default" : "destructive"}
-                            className="text-[10px] h-5 px-1.5 shrink-0"
-                          >
-                            {isCorrect ? "Correct" : "Incorrect"}
-                          </Badge>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div className="p-2 rounded bg-card border border-border/60">
-                            <span className="text-muted-foreground block text-[10px]">Your Answer:</span>
-                            <span className={cn("font-medium", isCorrect ? "text-emerald-600 font-bold" : "text-rose-600 font-bold")}>
-                              {userAnswer !== undefined ? `${letters[userAnswer]}. ${q.options[userAnswer]}` : "Not Answered"}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              {isW ? (
+                                <Badge variant="secondary" className="text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 py-0 gap-1">
+                                  <PenTool className="h-2.5 w-2.5" />
+                                  Written ({getQuestionMarks(q)} Marks)
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 py-0 gap-1">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                  MCQ
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="text-xs font-semibold text-foreground block">
+                              <span className="font-bold mr-1">Q{idx + 1}.</span> {q.questionText}
                             </span>
                           </div>
 
-                          <div className="p-2 rounded bg-card border border-border/60">
-                            <span className="text-muted-foreground block text-[10px]">Correct Answer:</span>
-                            <span className="font-bold text-emerald-600">
-                              {letters[q.correctOptionIndex]}. {q.options[q.correctOptionIndex]}
-                            </span>
-                          </div>
+                          {isW ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] h-5 px-1.5 shrink-0 font-bold",
+                                isWrittenAnswered ? "text-purple-600 border-purple-400 bg-purple-500/10" : "text-amber-600 border-amber-400 bg-amber-500/10"
+                              )}
+                            >
+                              {isWrittenAnswered ? "Response Submitted" : "Blank Response"}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant={isCorrect ? "default" : "destructive"}
+                              className="text-[10px] h-5 px-1.5 shrink-0"
+                            >
+                              {isCorrect ? "Correct" : "Incorrect"}
+                            </Badge>
+                          )}
                         </div>
 
-                        {q.explanation && (
-                          <div className="p-2.5 rounded bg-muted/50 text-[11px] text-muted-foreground border-l-2 border-primary">
-                            <strong className="text-foreground">Explanation:</strong> {q.explanation}
+                        {/* If Written: render student written response & model solution */}
+                        {isW ? (
+                          <div className="space-y-2 text-xs">
+                            <div className="p-2.5 rounded bg-card border border-border/70 space-y-1">
+                              <span className="text-muted-foreground block text-[10px] font-semibold uppercase">
+                                Your Written Answer:
+                              </span>
+                              <p className="font-mono text-xs whitespace-pre-wrap text-foreground">
+                                {typeof userAnswer === "string" && userAnswer.trim().length > 0 ? userAnswer : "No answer written."}
+                              </p>
+                            </div>
+                            <div className="p-2.5 rounded bg-purple-500/10 border border-purple-500/20 space-y-1">
+                              <span className="text-purple-700 dark:text-purple-300 block text-[10px] font-semibold uppercase flex items-center gap-1">
+                                <Sparkles className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+                                Model Solution & Evaluation Key:
+                              </span>
+                              <p className="text-xs text-foreground">
+                                {getQuestionSampleAnswer(q) || "No rubric provided."}
+                              </p>
+                            </div>
                           </div>
+                        ) : (
+                          /* If MCQ: render comparison */
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div className="p-2 rounded bg-card border border-border/60">
+                                <span className="text-muted-foreground block text-[10px]">Your Answer:</span>
+                                <span className={cn("font-medium", isCorrect ? "text-emerald-600 font-bold" : "text-rose-600 font-bold")}>
+                                  {typeof userAnswer === "number" && Array.isArray(q.options) && q.options[userAnswer]
+                                    ? `${letters[userAnswer] || userAnswer + 1}. ${q.options[userAnswer]}`
+                                    : "Not Answered"}
+                                </span>
+                              </div>
+
+                              <div className="p-2 rounded bg-card border border-border/60">
+                                <span className="text-muted-foreground block text-[10px]">Correct Answer:</span>
+                                <span className="font-bold text-emerald-600">
+                                  {Array.isArray(q.options) && q.options[q.correctOptionIndex]
+                                    ? `${letters[q.correctOptionIndex] || q.correctOptionIndex + 1}. ${q.options[q.correctOptionIndex]}`
+                                    : "N/A"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {q.explanation && (
+                              <div className="p-2.5 rounded bg-muted/50 text-[11px] text-muted-foreground border-l-2 border-primary">
+                                <strong className="text-foreground">Explanation:</strong> {q.explanation}
+                              </div>
+                            )}
+                          </>
                         )}
                       </CardContent>
                     </Card>

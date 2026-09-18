@@ -6,6 +6,7 @@ import {
   getAssessmentById,
   createAssessment,
   addQuestionToAssessment,
+  bulkAddQuestionsToAssessment,
   deleteAssessment,
 } from '../controllers/assessmentController.js';
 
@@ -21,6 +22,7 @@ router.get('/:id', getAssessmentById);
 // Creation, question addition, deletion require TPO role
 router.post('/', authorizeRoles('TPO'), createAssessment);
 router.post('/:id/questions', authorizeRoles('TPO'), addQuestionToAssessment);
+router.post('/:id/questions/bulk', authorizeRoles('TPO'), bulkAddQuestionsToAssessment);
 router.delete('/:id', authorizeRoles('TPO'), deleteAssessment);
 
 export default router;

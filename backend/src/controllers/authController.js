@@ -50,66 +50,8 @@ export async function register(req, res, next) {
 
     // 3. Handle role-specific registration
     if (role === 'STUDENT') {
-      if (!firstName || !lastName || !rollNumber || !department || !batchYear || cgpa === undefined) {
-        return sendError(res, 400, 'All student academic fields are required (First name, Last name, Roll number, Department, Batch year, CGPA)', {
-          code: 'MISSING_STUDENT_FIELDS'
-        });
-      }
-
-      const normalizedRollNumber = rollNumber.toUpperCase().trim();
-
-      // Check roll number uniqueness
-      const existingStudent = await prisma.student.findUnique({
-        where: { rollNumber: normalizedRollNumber }
-      });
-      if (existingStudent) {
-        return sendError(res, 409, 'A student with this roll number is already registered', {
-          code: 'ROLL_NUMBER_ALREADY_EXISTS'
-        });
-      }
-
-      const user = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          role: 'STUDENT',
-          student: {
-            create: {
-              firstName: firstName.trim(),
-              lastName: lastName.trim(),
-              rollNumber: normalizedRollNumber,
-              department: department.trim().toUpperCase(),
-              batchYear: parseInt(batchYear, 10),
-              cgpa: parseFloat(cgpa),
-              phone: phone ? phone.trim() : null
-            }
-          }
-        },
-        include: { student: true }
-      });
-
-      const token = generateToken({
-        userId: user.id,
-        email: user.email,
-        role: user.role
-      });
-
-      return sendSuccess(res, 201, 'Student account registered successfully', {
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          dashboardUrl: '/student/dashboard',
-          profile: {
-            id: user.student.id,
-            rollNumber: user.student.rollNumber,
-            firstName: user.student.firstName,
-            lastName: user.student.lastName,
-            department: user.student.department,
-            cgpa: user.student.cgpa
-          }
-        }
+      return sendError(res, 403, 'Student self-registration is disabled. Your student account must be pre-registered and enrolled in the placement roster by the Training & Placement Office (TPO). Please log in with your assigned credentials or contact your TPO.', {
+        code: 'STUDENT_REGISTRATION_RESTRICTED'
       });
     } else if (role === 'TPO') {
       if (!fullName || !designation) {
@@ -186,12 +128,19 @@ export async function login(req, res, next) {
     });
 
     if (!user) {
-      return sendError(res, 401, 'Invalid email or password', { code: 'INVALID_CREDENTIALS' });
+      return sendError(res, 401, 'Invalid email or password. Note: Only students pre-registered in the placement roster by the TPO can access the portal.', { code: 'INVALID_CREDENTIALS' });
     }
 
     if (!user.isActive) {
       return sendError(res, 403, 'Account is inactive. Please contact administration.', {
         code: 'ACCOUNT_INACTIVE'
+      });
+    }
+
+    // Ensure student accounts belong to the TPO student dataset
+    if (user.role === 'STUDENT' && !user.student) {
+      return sendError(res, 403, 'Student access denied. Your email is not enrolled in the student roster by the TPO.', {
+        code: 'STUDENT_NOT_IN_ROSTER'
       });
     }
 
@@ -216,6 +165,7 @@ export async function login(req, res, next) {
         id: user.id,
         email: user.email,
         role: user.role,
+        plainPassword: user.plainPassword || null,
         dashboardUrl,
         profile: user.role === 'STUDENT' ? {
           id: user.student?.id,
@@ -223,7 +173,8 @@ export async function login(req, res, next) {
           firstName: user.student?.firstName,
           lastName: user.student?.lastName,
           department: user.student?.department,
-          cgpa: user.student?.cgpa
+          cgpa: user.student?.cgpa,
+          plainPassword: user.plainPassword || null
         } : {
           id: user.tpoProfile?.id,
           fullName: user.tpoProfile?.fullName,
@@ -248,6 +199,7 @@ export async function getMe(req, res, next) {
         id: true,
         email: true,
         role: true,
+        plainPassword: true,
         isActive: true,
         createdAt: true,
         student: {

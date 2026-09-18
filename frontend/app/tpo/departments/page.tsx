@@ -156,8 +156,9 @@ export default function DepartmentsPage() {
   const [selectedDeptForSheet, setSelectedDeptForSheet] = useState<DepartmentData | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  // Dialog (Coordinator Edit) State
+  // Dialog (Department & Coordinator Edit) State
   const [selectedDeptForDialog, setSelectedDeptForDialog] = useState<DepartmentData | null>(null);
+  const [deptNameForm, setDeptNameForm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSavingCoordinator, setIsSavingCoordinator] = useState(false);
   const [coordinatorForm, setCoordinatorForm] = useState<FacultyCoordinator>({
@@ -278,23 +279,26 @@ export default function DepartmentsPage() {
     setIsSheetOpen(true);
   };
 
-  // Open Coordinator Dialog
+  // Open Department & Coordinator Dialog
   const handleOpenCoordinatorDialog = (dept: DepartmentData) => {
     setSelectedDeptForDialog(dept);
+    setDeptNameForm(dept.name);
     setCoordinatorForm({ ...dept.coordinator });
     setIsDialogOpen(true);
     setSaveSuccessMsg(null);
   };
 
-  // Save Coordinator Form
+  // Save Department & Coordinator Form
   const handleSaveCoordinator = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDeptForDialog) return;
 
     setIsSavingCoordinator(true);
     try {
+      const updatedName = deptNameForm.trim() || selectedDeptForDialog.name;
       await apiClient.post("/tpo/departments/coordinator", {
         departmentCode: selectedDeptForDialog.code,
+        name: updatedName,
         ...coordinatorForm,
       });
 
@@ -302,24 +306,25 @@ export default function DepartmentsPage() {
       setDepartments((prev) =>
         prev.map((d) =>
           d.code === selectedDeptForDialog.code
-            ? { ...d, coordinator: { ...coordinatorForm } }
+            ? { ...d, name: updatedName, coordinator: { ...coordinatorForm } }
             : d
         )
       );
 
       if (selectedDeptForSheet?.code === selectedDeptForDialog.code) {
         setSelectedDeptForSheet((prev) =>
-          prev ? { ...prev, coordinator: { ...coordinatorForm } } : null
+          prev ? { ...prev, name: updatedName, coordinator: { ...coordinatorForm } } : null
         );
       }
 
-      setSaveSuccessMsg(`Faculty Coordinator for ${selectedDeptForDialog.code} updated successfully!`);
+      setSaveSuccessMsg(`Department & Coordinator for ${selectedDeptForDialog.code} updated successfully!`);
+      await refreshDepartments();
       setTimeout(() => {
         setIsDialogOpen(false);
         setSaveSuccessMsg(null);
       }, 900);
     } catch (err: any) {
-      alert("Failed to update coordinator: " + (err.message || "Unknown error"));
+      alert("Failed to update department: " + (err.message || "Unknown error"));
     } finally {
       setIsSavingCoordinator(false);
     }
@@ -643,7 +648,7 @@ export default function DepartmentsPage() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Card key={i} className="animate-pulse border-border bg-card p-6 h-80">
                 <div className="h-6 w-28 bg-muted rounded-md mb-4" />
@@ -657,7 +662,7 @@ export default function DepartmentsPage() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
             {displayDepartments.map((dept) => {
               const isAboveTarget = dept.placementRate >= (dept.coordinator.targetPlacementRate || 80);
               const isNearTarget = dept.placementRate >= (dept.coordinator.targetPlacementRate || 80) - 10;
@@ -724,7 +729,7 @@ export default function DepartmentsPage() {
                               className="text-xs cursor-pointer gap-2"
                             >
                               <Edit3 className="h-3.5 w-3.5 text-muted-foreground" />
-                              Edit Coordinator
+                              Edit Department Details
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleExploreStudents(dept.code, dept.name)}
@@ -900,23 +905,21 @@ export default function DepartmentsPage() {
                     </div>
                   </CardContent>
 
-                  <CardFooter className="p-6 pt-0 flex items-center gap-3">
+                  <CardFooter className="px-5 pb-5 pt-0 flex items-center gap-2.5">
                     <Button
                       variant="outline"
-                      size="sm"
                       onClick={() => handleOpenSheet(dept)}
-                      className="flex-1 h-9.5 text-xs font-medium border-input bg-transparent hover:bg-muted text-foreground transition-colors"
+                      className="flex-1 h-10 px-3 text-xs font-semibold rounded-lg border-border/80 bg-background hover:bg-muted text-foreground transition-all shadow-2xs"
                     >
-                      <BarChart2 className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                      Branch Insights
+                      <BarChart2 className="h-4 w-4 mr-1.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">Branch Insights</span>
                     </Button>
                     <Button
-                      size="sm"
                       onClick={() => handleExploreStudents(dept.code)}
-                      className="flex-1 h-9.5 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs transition-colors"
+                      className="flex-1 h-10 px-3 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs transition-all"
                     >
-                      <span>Explore Students</span>
-                      <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                      <span className="truncate">Explore Students</span>
+                      <ArrowRight className="h-4 w-4 ml-1.5 shrink-0" />
                     </Button>
                   </CardFooter>
                 </Card>
@@ -1099,7 +1102,7 @@ export default function DepartmentsPage() {
                               className="text-xs cursor-pointer gap-2"
                             >
                               <Edit3 className="h-3.5 w-3.5 text-muted-foreground" />
-                              Edit Coordinator
+                              Edit Department Details
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleExploreStudents(dept.code, dept.name)}
@@ -1429,7 +1432,7 @@ export default function DepartmentsPage() {
           <DialogHeader className="pb-3 border-b border-border/60">
             <div className="flex items-center gap-2">
               <DialogTitle className="text-lg font-bold text-foreground">
-                Configure Coordinator & Targets
+                Edit Department & Coordinator Details
               </DialogTitle>
               {selectedDeptForDialog && (
                 <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary font-bold">
@@ -1438,7 +1441,7 @@ export default function DepartmentsPage() {
               )}
             </div>
             <DialogDescription className="text-xs text-muted-foreground">
-              Update the official faculty placement representative and accreditation targets for this branch.
+              Update the official department name, faculty placement representative, and accreditation targets for this branch.
             </DialogDescription>
           </DialogHeader>
 
@@ -1452,6 +1455,20 @@ export default function DepartmentsPage() {
           ) : (
             <form onSubmit={handleSaveCoordinator} className="space-y-4 pt-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-primary" />
+                    Department / Academic Branch Name
+                  </label>
+                  <Input
+                    required
+                    value={deptNameForm}
+                    onChange={(e) => setDeptNameForm(e.target.value)}
+                    placeholder="e.g. Computer Science & Engineering"
+                    className="h-9 text-xs border-input bg-background font-medium"
+                  />
+                </div>
+
                 <div className="space-y-1 sm:col-span-2">
                   <label className="text-xs font-semibold text-foreground">Faculty Coordinator Full Name</label>
                   <Input
@@ -1548,9 +1565,9 @@ export default function DepartmentsPage() {
                   type="submit"
                   size="sm"
                   disabled={isSavingCoordinator}
-                  className="h-9 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+                  className="h-9 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
                 >
-                  {isSavingCoordinator ? "Saving..." : "Save Coordinator"}
+                  {isSavingCoordinator ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>
             </form>

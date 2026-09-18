@@ -138,6 +138,8 @@ export default function TpoAnalyticsPage() {
     setSelectedDepartment,
     departments,
     isDepartmentMatch,
+    getDepartmentName,
+    refreshDepartments,
   } = useDepartment();
 
   const [batchYear, setBatchYear] = useState<string>("2026");
@@ -187,8 +189,9 @@ export default function TpoAnalyticsPage() {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
+    await refreshDepartments();
     fetchAnalytics(true);
   };
 
@@ -217,15 +220,19 @@ export default function TpoAnalyticsPage() {
       [],
       ["--- Departmental Benchmarks ---", ""],
       ["Department", "Registered", "Placed", "Placement Rate %", "Avg CTC (LPA)", "Highest CTC (LPA)", "Total Offers"],
-      ...analytics.departmentBenchmarks.map(d => [
-        d.name,
-        String(d.totalStudents),
-        String(d.placedStudents),
-        `${d.placementRate}%`,
-        `₹${d.averageCtc}`,
-        `₹${d.highestCtc}`,
-        String(d.totalOffers)
-      ]),
+      ...analytics.departmentBenchmarks.map(d => {
+        const liveName = getDepartmentName(d.code);
+        const resolvedName = (liveName && liveName !== d.code) ? liveName : d.name;
+        return [
+          resolvedName,
+          String(d.totalStudents),
+          String(d.placedStudents),
+          `${d.placementRate}%`,
+          `₹${d.averageCtc}`,
+          `₹${d.highestCtc}`,
+          String(d.totalOffers)
+        ];
+      }),
     ];
 
     const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
@@ -238,10 +245,16 @@ export default function TpoAnalyticsPage() {
     document.body.removeChild(link);
   };
 
-  // Sorted Department Benchmarks
+  // Sorted Department Benchmarks (Synchronized with Department Registry)
   const sortedBenchmarks = useMemo(() => {
     if (!analytics?.departmentBenchmarks) return [];
-    let list = analytics.departmentBenchmarks;
+    let list = analytics.departmentBenchmarks.map((d) => {
+      const liveName = getDepartmentName(d.code);
+      return {
+        ...d,
+        name: (liveName && liveName !== d.code) ? liveName : d.name,
+      };
+    });
     if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
       const filtered = list.filter((d) => isDepartmentMatch(d.code));
       if (filtered.length > 0) list = filtered;
@@ -254,7 +267,7 @@ export default function TpoAnalyticsPage() {
       }
       return deptSortAsc ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
     });
-  }, [analytics?.departmentBenchmarks, deptSortField, deptSortAsc, selectedDepartmentCode, isDepartmentMatch]);
+  }, [analytics?.departmentBenchmarks, deptSortField, deptSortAsc, selectedDepartmentCode, isDepartmentMatch, getDepartmentName]);
 
   const handleSortToggle = (field: keyof DeptBenchmark) => {
     if (deptSortField === field) {

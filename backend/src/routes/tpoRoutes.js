@@ -9,6 +9,7 @@ import {
   bulkDeleteStudents,
   getDepartmentsAnalytics,
   updateDepartmentCoordinator,
+  updateDepartmentDetails,
   createDepartment,
   deleteDepartment,
 } from '../controllers/tpoController.js';
@@ -24,6 +25,8 @@ router.use(authorizeRoles('TPO'));
 router.get('/dashboard-stats', getDashboardStats);
 router.get('/departments', getDepartmentsAnalytics);
 router.post('/departments', createDepartment);
+router.put('/departments/:code', updateDepartmentDetails);
+router.patch('/departments/:code', updateDepartmentDetails);
 router.delete('/departments/:code', deleteDepartment);
 router.post('/departments/coordinator', updateDepartmentCoordinator);
 router.get('/students', getStudents);

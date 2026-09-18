@@ -1,16 +1,10 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
-import { normalizeDepartment } from '../utils/departmentHelper.js';
-
-const DEPT_METADATA = [
-  { code: 'CSE', name: 'Computer Science & Engineering', color: '#3b82f6' },
-  { code: 'IT', name: 'Information Technology', color: '#06b6d4' },
-  { code: 'AI & DS', name: 'Artificial Intelligence & Data Science', color: '#8b5cf6' },
-  { code: 'ECE', name: 'Electronics & Communication', color: '#ec4899' },
-  { code: 'MECH', name: 'Mechanical Engineering', color: '#f59e0b' },
-  { code: 'CIVIL', name: 'Civil Engineering', color: '#10b981' },
-  { code: 'EE', name: 'Electrical Engineering', color: '#6366f1' },
-];
+import {
+  normalizeDepartment,
+  buildStudentDeptFilter,
+  getAllDepartmentMetadata,
+} from '../utils/departmentHelper.js';
 
 /**
  * Get Comprehensive Placement Analytics
@@ -23,7 +17,10 @@ export async function getPlacementAnalytics(req, res, next) {
 
     const studentWhere = {};
     if (targetDept) {
-      studentWhere.department = { equals: targetDept, mode: 'insensitive' };
+      const deptFilter = buildStudentDeptFilter(targetDept);
+      if (deptFilter) {
+        Object.assign(studentWhere, deptFilter);
+      }
     }
     if (batchYear && batchYear !== 'ALL' && batchYear !== 'All Batches') {
       const parsedYear = parseInt(batchYear, 10);
@@ -224,31 +221,60 @@ export async function getPlacementAnalytics(req, res, next) {
       },
     ];
 
-    // 5. Department Benchmarks
-    const departmentBenchmarks = DEPT_METADATA.map(dept => {
-      const code = dept.code;
-      const deptStudents = students.filter(s => s.department.toUpperCase() === code);
-      const deptTotal = deptStudents.length > 0 ? deptStudents.length : (code === 'CSE' ? 140 : code === 'IT' ? 110 : code === 'AI & DS' ? 70 : code === 'ECE' ? 95 : 60);
-      const deptPlaced = deptStudents.filter(s => s.placementStatus).length || Math.floor(deptTotal * (code === 'CSE' ? 0.94 : code === 'IT' ? 0.91 : code === 'AI & DS' ? 0.92 : code === 'ECE' ? 0.81 : 0.72));
-      const deptRate = Number(((deptPlaced / deptTotal) * 100).toFixed(1));
+    // 5. Department Benchmarks (Synchronized with Department Registry)
+    const allRegisteredDepts = getAllDepartmentMetadata();
 
-      const deptOffers = offerDetails.filter(o => o.department?.toUpperCase() === code);
-      const deptPackages = deptOffers.map(o => o.package);
+    // Also discover any additional departments present on student records
+    const studentDeptCodes = new Set(
+      students.map((s) => normalizeDepartment(s.department)).filter(Boolean)
+    );
+
+    const combinedDepts = [...allRegisteredDepts];
+    studentDeptCodes.forEach((code) => {
+      if (!combinedDepts.some((d) => d.code.toUpperCase() === code.toUpperCase())) {
+        combinedDepts.push({
+          code,
+          name: code,
+          color: '#6366f1',
+          isCustom: true,
+        });
+      }
+    });
+
+    const departmentBenchmarks = combinedDepts.map((dept) => {
+      const code = dept.code;
+      // Match students normalized so aliases & variations map properly
+      const deptStudents = students.filter(
+        (s) => normalizeDepartment(s.department) === code
+      );
+      const deptTotal = deptStudents.length > 0
+        ? deptStudents.length
+        : (dept.isCustom ? 0 : (code === 'CSE' ? 140 : code === 'IT' ? 110 : code === 'AI & DS' ? 70 : code === 'ECE' ? 95 : 60));
+
+      const deptPlaced = deptStudents.filter((s) => s.placementStatus).length
+        || (deptTotal > 0 && !dept.isCustom ? Math.floor(deptTotal * (code === 'CSE' ? 0.94 : code === 'IT' ? 0.91 : code === 'AI & DS' ? 0.92 : code === 'ECE' ? 0.81 : 0.72)) : 0);
+
+      const deptRate = deptTotal > 0 ? Number(((deptPlaced / deptTotal) * 100).toFixed(1)) : 0;
+
+      const deptOffers = offerDetails.filter((o) => normalizeDepartment(o.department) === code);
+      const deptPackages = deptOffers.map((o) => o.package);
       const deptAvgCtc = deptPackages.length > 0 
         ? Number((deptPackages.reduce((a, b) => a + b, 0) / deptPackages.length).toFixed(2))
-        : (code === 'CSE' ? 14.8 : code === 'AI & DS' ? 14.2 : code === 'IT' ? 12.6 : code === 'ECE' ? 9.8 : 7.4);
-      const deptHighCtc = deptPackages.length > 0 ? Math.max(...deptPackages) : (code === 'CSE' ? 44.5 : code === 'AI & DS' ? 38.0 : code === 'IT' ? 32.0 : 22.0);
+        : (dept.isCustom ? 0 : (code === 'CSE' ? 14.8 : code === 'AI & DS' ? 14.2 : code === 'IT' ? 12.6 : code === 'ECE' ? 9.8 : 7.4));
+      const deptHighCtc = deptPackages.length > 0
+        ? Math.max(...deptPackages)
+        : (dept.isCustom ? 0 : (code === 'CSE' ? 44.5 : code === 'AI & DS' ? 38.0 : code === 'IT' ? 32.0 : 22.0));
 
       return {
         code,
         name: dept.name,
-        color: dept.color,
+        color: dept.color || '#3b82f6',
         totalStudents: deptTotal,
         placedStudents: deptPlaced,
         placementRate: deptRate,
         averageCtc: deptAvgCtc,
         highestCtc: deptHighCtc,
-        totalOffers: deptOffers.length || Math.floor(deptPlaced * 1.25),
+        totalOffers: deptOffers.length || (deptPlaced > 0 && !dept.isCustom ? Math.floor(deptPlaced * 1.25) : 0),
       };
     });
 

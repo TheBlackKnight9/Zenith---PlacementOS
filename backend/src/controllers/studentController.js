@@ -1,6 +1,7 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
+import { hashPassword, comparePassword } from '../utils/password.js';
 
 /**
  * Get Authenticated Student Profile
@@ -11,7 +12,7 @@ export async function getProfile(req, res, next) {
     const student = await prisma.student.findUnique({
       where: { userId: req.user.id },
       include: {
-        user: { select: { email: true, createdAt: true } },
+        user: { select: { email: true, plainPassword: true, createdAt: true } },
         skills: {
           include: { skill: true }
         },
@@ -36,6 +37,7 @@ export async function getProfile(req, res, next) {
         lastName: student.lastName,
         fullName: `${student.firstName} ${student.lastName}`,
         email: student.user.email,
+        plainPassword: student.user.plainPassword || null,
         phone: student.phone,
         department: student.department,
         batchYear: student.batchYear,
@@ -107,6 +109,58 @@ export async function updateProfile(req, res, next) {
         linkedinUrl: updated.linkedinUrl,
         portfolioUrl: updated.portfolioUrl
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Update Student Password & Synchronize with TPO Records
+ * PUT /api/students/change-password
+ */
+export async function changePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || String(newPassword).trim().length < 6) {
+      return sendError(res, 400, 'New password must be at least 6 characters long', {
+        code: 'WEAK_PASSWORD'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
+
+    if (!user) {
+      return sendError(res, 404, 'User account not found', { code: 'USER_NOT_FOUND' });
+    }
+
+    // If currentPassword is provided, verify it
+    if (currentPassword) {
+      const isMatch = await comparePassword(currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return sendError(res, 400, 'Current password does not match', {
+          code: 'INVALID_CURRENT_PASSWORD'
+        });
+      }
+    }
+
+    const trimmedNewPass = String(newPassword).trim();
+    const newHash = await hashPassword(trimmedNewPass);
+
+    // Update both passwordHash (for authentication) and plainPassword (for TPO synchronization)
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        plainPassword: trimmedNewPass
+      }
+    });
+
+    return sendSuccess(res, 200, 'Password updated successfully and synchronized with TPO placement records', {
+      plainPassword: updatedUser.plainPassword
     });
   } catch (error) {
     next(error);

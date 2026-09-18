@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getProfile,
   updateProfile,
+  changePassword,
   addSkill,
   removeSkill,
   getDrivesWithEligibility,
@@ -20,6 +21,7 @@ router.use(authorizeRoles('STUDENT'));
 // Profile and Skills
 router.get('/profile', getProfile);
 router.put('/profile', updateProfile);
+router.put('/change-password', changePassword);
 router.post('/skills', addSkill);
 router.delete('/skills/:skillId', removeSkill);
 

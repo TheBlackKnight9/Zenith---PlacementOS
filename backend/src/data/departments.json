@@ -1,0 +1,119 @@
+{
+  "departments": [
+    {
+      "code": "CSE",
+      "name": "Computer Science & Engineering",
+      "icon": "Code",
+      "color": "#3b82f6",
+      "badgeColor": "orange"
+    },
+    {
+      "code": "IT",
+      "name": "Information Technology",
+      "icon": "Laptop",
+      "color": "#06b6d4",
+      "badgeColor": "blue"
+    },
+    {
+      "code": "AI & DS",
+      "name": "Artificial Intelligence & Data Science",
+      "icon": "BrainCircuit",
+      "color": "#8b5cf6",
+      "badgeColor": "rose"
+    },
+    {
+      "code": "ECE",
+      "name": "Electronics & Communication",
+      "icon": "Cpu",
+      "color": "#ec4899",
+      "badgeColor": "purple"
+    },
+    {
+      "code": "MECH",
+      "name": "Mechanical Engineering",
+      "icon": "Cog",
+      "color": "#f59e0b",
+      "badgeColor": "amber"
+    },
+    {
+      "code": "CIVIL",
+      "name": "Civil Engineering",
+      "icon": "Building2",
+      "color": "#10b981",
+      "badgeColor": "emerald"
+    },
+    {
+      "code": "EE",
+      "name": "Electrical Engineering",
+      "icon": "Zap",
+      "color": "#6366f1",
+      "badgeColor": "indigo"
+    }
+  ],
+  "coordinators": {
+    "CSE": {
+      "fullName": "Dr. Anirban Mukherjee",
+      "designation": "Professor & Head of Placements (CSE)",
+      "email": "anirban.m@college.edu",
+      "phone": "+91 98765 00201",
+      "office": "Tech Block A, Room 402",
+      "intakeCapacity": 240,
+      "targetPlacementRate": 90
+    },
+    "IT": {
+      "fullName": "Dr. Meera Nambiar",
+      "designation": "Associate Professor & TPO Coordinator",
+      "email": "meera.nambiar@college.edu",
+      "phone": "+91 98765 00202",
+      "office": "Tech Block B, Room 210",
+      "intakeCapacity": 180,
+      "targetPlacementRate": 85
+    },
+    "ECE": {
+      "fullName": "Prof. Rajesh Kumar Verma",
+      "designation": "Assistant Professor & Industry Liaison",
+      "email": "rajesh.verma@college.edu",
+      "phone": "+91 98765 00203",
+      "office": "Circuits & Systems Block, Room 105",
+      "intakeCapacity": 160,
+      "targetPlacementRate": 80
+    },
+    "MECH": {
+      "fullName": "Dr. Sandeep Deshpande",
+      "designation": "Professor & Core Placements In-Charge",
+      "email": "sandeep.d@college.edu",
+      "phone": "+91 98765 00204",
+      "office": "Mechanical Workshop Block, Room 301",
+      "intakeCapacity": 150,
+      "targetPlacementRate": 75
+    },
+    "CIVIL": {
+      "fullName": "Prof. Ananya Mukherjee",
+      "designation": "Associate Professor & TPO Representative",
+      "email": "ananya.m@college.edu",
+      "phone": "+91 98765 00205",
+      "office": "Structural Wing, Room 102",
+      "intakeCapacity": 120,
+      "targetPlacementRate": 70
+    },
+    "AI & DS": {
+      "fullName": "Dr. Vikramaditya Sen",
+      "designation": "Head of AI Lab & Career Lead",
+      "email": "vikram.sen@college.edu",
+      "phone": "+91 98765 00206",
+      "office": "Innovation Hub, Room 501",
+      "intakeCapacity": 120,
+      "targetPlacementRate": 88
+    },
+    "EE": {
+      "fullName": "Dr. Arvind Swaminathan",
+      "designation": "Professor & Department Placement Coordinator",
+      "email": "arvind.s@college.edu",
+      "phone": "+91 98765 00207",
+      "office": "Electrical Sciences Block, Room 204",
+      "intakeCapacity": 120,
+      "targetPlacementRate": 82
+    }
+  },
+  "updatedAt": "2026-09-18T12:50:55.001Z"
+}
