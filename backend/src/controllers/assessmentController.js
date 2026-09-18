@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 const SEED_ASSESSMENTS = [
   {
@@ -178,15 +179,13 @@ export async function getAssessments(req, res, next) {
       where.targetRole = { contains: targetRole.trim(), mode: 'insensitive' };
     }
 
-    if (
-      department &&
-      department.trim().toUpperCase() !== 'ALL' &&
-      department.trim().toUpperCase() !== 'ALL DEPARTMENTS'
-    ) {
-      const deptCode = department.trim().toUpperCase();
+    const normDept = normalizeDepartment(department);
+    if (normDept) {
       where.OR = [
-        { targetBranches: { has: deptCode } },
-        { targetBranches: { has: 'ALL' } }
+        { targetBranches: { has: normDept } },
+        { targetBranches: { has: 'ALL' } },
+        { targetBranches: { has: 'All' } },
+        { targetBranches: { hasSome: [normDept, 'ALL', 'All'] } }
       ];
     }
 

@@ -127,7 +127,13 @@ const DEPT_FULL_NAMES: Record<string, string> = {
 
 export default function DepartmentsPage() {
   const router = useRouter();
-  const { setSelectedDepartment, refreshDepartments } = useDepartment();
+  const {
+    selectedDepartment,
+    selectedDepartmentCode,
+    setSelectedDepartment,
+    refreshDepartments,
+    isDepartmentMatch,
+  } = useDepartment();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -220,18 +226,30 @@ export default function DepartmentsPage() {
     fetchDepartments();
   }, [fetchDepartments]);
 
+  // Filtered departments for cards grid
+  const displayDepartments = useMemo(() => {
+    if (!selectedDepartmentCode || selectedDepartmentCode === "ALL") return departments;
+    const match = departments.filter((d) => isDepartmentMatch(d.code));
+    return match.length > 0 ? match : departments;
+  }, [departments, selectedDepartmentCode, isDepartmentMatch]);
+
   // Filtered departments for comparison table
   const filteredDepartments = useMemo(() => {
+    let list = departments;
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      const match = departments.filter((d) => isDepartmentMatch(d.code));
+      if (match.length > 0) list = match;
+    }
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return departments;
-    return departments.filter(
+    if (!q) return list;
+    return list.filter(
       (d) =>
         d.code.toLowerCase().includes(q) ||
         d.name.toLowerCase().includes(q) ||
         d.coordinator.fullName.toLowerCase().includes(q) ||
         d.topRecruiters.some((r) => r.toLowerCase().includes(q))
     );
-  }, [departments, searchQuery]);
+  }, [departments, searchQuery, selectedDepartmentCode, isDepartmentMatch]);
 
   const isAllSelected = filteredDepartments.length > 0 && filteredDepartments.every((d) => selectedRows[d.code]);
   const isSomeSelected = filteredDepartments.some((d) => selectedRows[d.code]) && !isAllSelected;
@@ -579,8 +597,18 @@ export default function DepartmentsPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
-              {departments.length} Branches Registered
+              {displayDepartments.length} {displayDepartments.length === 1 ? "Branch" : "Branches"} {selectedDepartmentCode !== "ALL" ? `Filtered (${selectedDepartmentCode})` : "Registered"}
             </span>
+            {selectedDepartmentCode !== "ALL" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedDepartment("All Departments")}
+                className="h-8 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold"
+              >
+                Clear Filter
+              </Button>
+            )}
 
             <Button
               variant="outline"
@@ -630,7 +658,7 @@ export default function DepartmentsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {departments.map((dept) => {
+            {displayDepartments.map((dept) => {
               const isAboveTarget = dept.placementRate >= (dept.coordinator.targetPlacementRate || 80);
               const isNearTarget = dept.placementRate >= (dept.coordinator.targetPlacementRate || 80) - 10;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap,
   Plus,
@@ -49,7 +49,7 @@ interface InternshipItem {
 const ALL_BRANCHES = ["CSE", "IT", "ECE", "MECH", "CIVIL"];
 
 export default function TpoInternshipsPage() {
-  const { departmentCodes } = useDepartment();
+  const { departmentCodes, selectedDepartmentCode, isDepartmentMatch } = useDepartment();
   const activeBranches = departmentCodes && departmentCodes.length > 0 ? departmentCodes : ALL_BRANCHES;
 
   const [internships, setInternships] = useState<InternshipItem[]>([]);
@@ -74,21 +74,31 @@ export default function TpoInternshipsPage() {
 
   const [selectedBranches, setSelectedBranches] = useState<string[]>(["CSE", "IT"]);
 
-  const loadInternships = async () => {
+  const loadInternships = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await apiClient.get<{ internships: InternshipItem[] }>("/internships");
-      setInternships(data.internships);
+      const params = new URLSearchParams();
+      if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+        params.append("department", selectedDepartmentCode);
+      }
+      const queryStr = params.toString() ? `?${params.toString()}` : "";
+      const data = await apiClient.get<{ internships: InternshipItem[] }>(`/internships${queryStr}`);
+      setInternships(data.internships || []);
     } catch (err) {
       console.error("Failed to load internships:", err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedDepartmentCode]);
 
   useEffect(() => {
     loadInternships();
-  }, []);
+  }, [loadInternships]);
+
+  const filteredInternships = useMemo(() => {
+    if (!selectedDepartmentCode || selectedDepartmentCode === "ALL") return internships;
+    return internships.filter((item) => isDepartmentMatch(item.eligibleBranches));
+  }, [internships, selectedDepartmentCode, isDepartmentMatch]);
 
   const handleBranchToggle = (branch: string) => {
     if (selectedBranches.includes(branch)) {
@@ -153,7 +163,10 @@ export default function TpoInternshipsPage() {
   return (
     <div className="space-y-3">
       {/* Top Action Bar */}
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        <Badge variant="outline" className="text-xs font-semibold">
+          {filteredInternships.length} Internships Available {selectedDepartmentCode !== "ALL" ? `(${selectedDepartmentCode})` : ""}
+        </Badge>
         <Button onClick={() => setIsModalOpen(true)} size="sm">
           <Plus className="h-3.5 w-3.5 mr-1.5" />
           Publish New Internship
@@ -185,8 +198,8 @@ export default function TpoInternshipsPage() {
                     Loading internship opportunities...
                   </TableCell>
                 </TableRow>
-              ) : internships.length > 0 ? (
-                internships.map((item) => (
+              ) : filteredInternships.length > 0 ? (
+                filteredInternships.map((item) => (
                   <TableRow key={item.id} className="border-border">
                     <TableCell>
                       <div className="font-semibold text-foreground flex items-center gap-2">

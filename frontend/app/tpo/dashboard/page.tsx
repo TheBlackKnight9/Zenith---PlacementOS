@@ -101,7 +101,7 @@ interface DashboardStats {
 }
 
 export default function TpoDashboardPage() {
-  const { selectedDepartment } = useDepartment();
+  const { selectedDepartment, selectedDepartmentCode } = useDepartment();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -109,10 +109,13 @@ export default function TpoDashboardPage() {
     async function loadStats() {
       try {
         setIsLoading(true);
-        const query =
-          selectedDepartment && selectedDepartment !== "All Departments"
-            ? `?department=${encodeURIComponent(selectedDepartment)}`
+        const deptParam =
+          selectedDepartmentCode && selectedDepartmentCode !== "ALL"
+            ? selectedDepartmentCode
+            : selectedDepartment && selectedDepartment !== "All Departments"
+            ? selectedDepartment
             : "";
+        const query = deptParam ? `?department=${encodeURIComponent(deptParam)}` : "";
         const data = await apiClient.get<DashboardStats>(`/tpo/dashboard-stats${query}`);
         setStats(data);
       } catch (err) {
@@ -122,7 +125,7 @@ export default function TpoDashboardPage() {
       }
     }
     loadStats();
-  }, [selectedDepartment]);
+  }, [selectedDepartment, selectedDepartmentCode]);
 
   if (isLoading && !stats) {
     return (

@@ -132,7 +132,13 @@ interface AnalyticsData {
 }
 
 export default function TpoAnalyticsPage() {
-  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+  const {
+    selectedDepartment,
+    selectedDepartmentCode,
+    setSelectedDepartment,
+    departments,
+    isDepartmentMatch,
+  } = useDepartment();
 
   const [batchYear, setBatchYear] = useState<string>("2026");
   const [academicCycle, setAcademicCycle] = useState<string>("2025-26");
@@ -154,8 +160,8 @@ export default function TpoAnalyticsPage() {
       setError(null);
 
       const params = new URLSearchParams();
-      if (selectedDepartment && selectedDepartment !== "ALL" && selectedDepartment !== "All Departments") {
-        params.append("department", selectedDepartment);
+      if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+        params.append("department", selectedDepartmentCode);
       }
       if (batchYear && batchYear !== "ALL") {
         params.append("batchYear", batchYear);
@@ -175,7 +181,7 @@ export default function TpoAnalyticsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDepartment, batchYear, academicCycle]);
+  }, [selectedDepartmentCode, batchYear, academicCycle]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -235,7 +241,12 @@ export default function TpoAnalyticsPage() {
   // Sorted Department Benchmarks
   const sortedBenchmarks = useMemo(() => {
     if (!analytics?.departmentBenchmarks) return [];
-    return [...analytics.departmentBenchmarks].sort((a, b) => {
+    let list = analytics.departmentBenchmarks;
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      const filtered = list.filter((d) => isDepartmentMatch(d.code));
+      if (filtered.length > 0) list = filtered;
+    }
+    return [...list].sort((a, b) => {
       const valA = a[deptSortField];
       const valB = b[deptSortField];
       if (typeof valA === "string" && typeof valB === "string") {
@@ -243,7 +254,7 @@ export default function TpoAnalyticsPage() {
       }
       return deptSortAsc ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
     });
-  }, [analytics?.departmentBenchmarks, deptSortField, deptSortAsc]);
+  }, [analytics?.departmentBenchmarks, deptSortField, deptSortAsc, selectedDepartmentCode, isDepartmentMatch]);
 
   const handleSortToggle = (field: keyof DeptBenchmark) => {
     if (deptSortField === field) {
@@ -302,21 +313,19 @@ export default function TpoAnalyticsPage() {
               <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-[11px] font-medium text-muted-foreground">Branch:</span>
               <Select
-                value={selectedDepartment || "ALL"}
-                onValueChange={(val) => setSelectedDepartment(val)}
+                value={selectedDepartmentCode || "ALL"}
+                onValueChange={(val) => setSelectedDepartment(val === "ALL" ? "All Departments" : val)}
               >
                 <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-0 px-1 py-0 w-[120px] font-semibold text-foreground">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Branches</SelectItem>
-                  <SelectItem value="CSE">CSE</SelectItem>
-                  <SelectItem value="IT">IT</SelectItem>
-                  <SelectItem value="AI & DS">AI & DS</SelectItem>
-                  <SelectItem value="ECE">ECE</SelectItem>
-                  <SelectItem value="MECH">MECH</SelectItem>
-                  <SelectItem value="CIVIL">CIVIL</SelectItem>
-                  <SelectItem value="EE">EE</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept.code} value={dept.code}>
+                      {dept.code}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

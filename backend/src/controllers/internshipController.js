@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 /**
  * Create a new Internship Opportunity
@@ -71,10 +72,20 @@ export async function createInternship(req, res, next) {
  */
 export async function getAllInternships(req, res, next) {
   try {
-    const { status } = req.query;
+    const { status, department } = req.query;
     const where = {};
     if (status && status !== 'ALL') {
       where.status = status;
+    }
+
+    const normDept = normalizeDepartment(department);
+    if (normDept) {
+      where.OR = [
+        { eligibleBranches: { has: normDept } },
+        { eligibleBranches: { has: 'ALL' } },
+        { eligibleBranches: { has: 'All' } },
+        { eligibleBranches: { hasSome: [normDept, 'ALL', 'All'] } }
+      ];
     }
 
     const internships = await prisma.internshipOpportunity.findMany({

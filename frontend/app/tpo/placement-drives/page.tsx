@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
   Building2, 
   Briefcase, 
@@ -201,7 +201,7 @@ const getDefaultFormState = () => ({
 });
 
 export default function PlacementDrivesPage() {
-  const { departmentCodes } = useDepartment();
+  const { departmentCodes, selectedDepartmentCode, isDepartmentMatch } = useDepartment();
   const activeBranches = departmentCodes && departmentCodes.length > 0 ? departmentCodes : ALL_BRANCHES;
 
   const [drives, setDrives] = useState<PlacementDriveItem[]>([]);
@@ -256,22 +256,31 @@ export default function PlacementDrivesPage() {
     }
   };
 
-  useEffect(() => {
-    fetchDrives();
-  }, []);
-
-  const fetchDrives = async () => {
+  const fetchDrives = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.get<{ drives: PlacementDriveItem[] }>("/placement-drives");
+      const query =
+        selectedDepartmentCode && selectedDepartmentCode !== "ALL"
+          ? `?department=${encodeURIComponent(selectedDepartmentCode)}`
+          : "";
+      const res = await apiClient.get<{ drives: PlacementDriveItem[] }>(`/placement-drives${query}`);
       setDrives(res.drives || []);
     } catch (err: any) {
       setError(err.message || "Failed to load placement drives");
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDepartmentCode]);
+
+  useEffect(() => {
+    fetchDrives();
+  }, [fetchDrives]);
+
+  const filteredDrives = useMemo(() => {
+    if (!selectedDepartmentCode || selectedDepartmentCode === "ALL") return drives;
+    return drives.filter((d) => isDepartmentMatch(d.eligibleBranches));
+  }, [drives, selectedDepartmentCode, isDepartmentMatch]);
 
   const openAddDialog = () => {
     setEditingDriveId(null);
@@ -482,10 +491,10 @@ export default function PlacementDrivesPage() {
   };
 
   // Stats derivation
-  const totalDrives = drives.length;
-  const activeDrives = drives.filter(d => d.status === "ACTIVE").length;
-  const upcomingDrives = drives.filter(d => d.status === "UPCOMING").length;
-  const totalApplicants = drives.reduce((sum, d) => sum + (d.applicantCount || 0), 0);
+  const totalDrives = filteredDrives.length;
+  const activeDrives = filteredDrives.filter((d: PlacementDriveItem) => d.status === "ACTIVE").length;
+  const upcomingDrives = filteredDrives.filter((d: PlacementDriveItem) => d.status === "UPCOMING").length;
+  const totalApplicants = filteredDrives.reduce((sum: number, d: PlacementDriveItem) => sum + (d.applicantCount || 0), 0);
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-16">
@@ -625,7 +634,7 @@ export default function PlacementDrivesPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
-              {drives.length} Drives Listed
+              {filteredDrives.length} Drives Listed
             </span>
 
             <Button
@@ -671,12 +680,12 @@ export default function PlacementDrivesPage() {
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading drives...</TableCell>
                 </TableRow>
-              ) : drives.length === 0 ? (
+              ) : filteredDrives.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No placement drives found.</TableCell>
                 </TableRow>
               ) : (
-                drives.map(drive => (
+                filteredDrives.map((drive: PlacementDriveItem) => (
                   <TableRow key={drive.id} className="border-b border-border/50 hover:bg-muted/30">
                     <TableCell>
                       <button

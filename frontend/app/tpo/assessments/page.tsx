@@ -291,7 +291,7 @@ const DEFAULT_FALLBACK_ASSESSMENTS: SkillAssessmentItem[] = [
 ];
 
 export default function TpoAssessmentsPage() {
-  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+  const { selectedDepartment, selectedDepartmentCode, setSelectedDepartment } = useDepartment();
 
   const [assessments, setAssessments] = useState<SkillAssessmentItem[]>(DEFAULT_FALLBACK_ASSESSMENTS);
   const [kpis, setKpis] = useState({
@@ -307,7 +307,7 @@ export default function TpoAssessmentsPage() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("ALL");
-  const [selectedBranch, setSelectedBranch] = useState<string>(selectedDepartment || "ALL");
+  const [selectedBranch, setSelectedBranch] = useState<string>("ALL");
 
   // Create Assessment Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -364,10 +364,12 @@ export default function TpoAssessmentsPage() {
 
   // Sync with global department
   useEffect(() => {
-    if (selectedDepartment && selectedDepartment !== "ALL") {
-      setSelectedBranch(selectedDepartment);
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      setSelectedBranch(selectedDepartmentCode);
+    } else {
+      setSelectedBranch("ALL");
     }
-  }, [selectedDepartment]);
+  }, [selectedDepartmentCode]);
 
   // Fetch assessments from API
   const fetchAssessments = useCallback(async (isSilent = false) => {
@@ -762,9 +764,18 @@ export default function TpoAssessmentsPage() {
         return false;
       }
       if (selectedBranch && selectedBranch !== "ALL") {
+        const code = selectedBranch.toUpperCase();
         const hasBranch =
           item.targetBranches.includes("ALL") ||
-          item.targetBranches.some((b) => b.toUpperCase() === selectedBranch.toUpperCase());
+          item.targetBranches.includes("All") ||
+          item.targetBranches.some((b) => {
+            const bc = b.toUpperCase();
+            return (
+              bc === code ||
+              bc === "ALL" ||
+              (code === "CSE" && (bc === "CS" || bc === "COMPUTER SCIENCE" || bc.includes("COMPUTER SCIENCE")))
+            );
+          });
         if (!hasBranch) return false;
       }
       if (search.trim()) {
@@ -780,6 +791,25 @@ export default function TpoAssessmentsPage() {
       return true;
     });
   }, [assessments, activeCategory, selectedDifficulty, selectedBranch, search]);
+
+  // Dynamic KPIs reflecting filtered slice
+  const displayKpis = useMemo(() => {
+    if (selectedBranch === "ALL" && activeCategory === "ALL" && selectedDifficulty === "ALL" && !search.trim()) {
+      return kpis;
+    }
+    const count = filteredAssessments.length;
+    const questions = filteredAssessments.reduce((acc, a) => acc + (a.totalQuestions || a.questions?.length || 0), 0);
+    const attempts = filteredAssessments.reduce((acc, a) => acc + (a.stats?.totalAttempts || 0), 0);
+    const passRate = count > 0 
+      ? Math.round(filteredAssessments.reduce((acc, a) => acc + (a.stats?.passRate || a.passingScore || 70), 0) / count) 
+      : 0;
+    return {
+      totalAssessments: count,
+      totalQuestions: questions,
+      totalAttempts: attempts,
+      avgPassRate: passRate,
+    };
+  }, [filteredAssessments, kpis, selectedBranch, activeCategory, selectedDifficulty, search]);
 
   const getDifficultyBadge = (difficulty: string) => {
     switch (difficulty) {
@@ -855,7 +885,7 @@ export default function TpoAssessmentsPage() {
                 Published Tests
               </p>
               <p className="text-2xl font-bold text-foreground">
-                {kpis.totalAssessments}
+                {displayKpis.totalAssessments}
               </p>
               <p className="text-xs text-muted-foreground">Ready for campus drives</p>
             </div>
@@ -872,7 +902,7 @@ export default function TpoAssessmentsPage() {
                 Question Bank
               </p>
               <p className="text-2xl font-bold text-foreground">
-                {kpis.totalQuestions}
+                {displayKpis.totalQuestions}
               </p>
               <p className="text-xs text-muted-foreground">MCQs & coding challenges</p>
             </div>
@@ -889,7 +919,7 @@ export default function TpoAssessmentsPage() {
                 Student Attempts
               </p>
               <p className="text-2xl font-bold text-foreground">
-                {kpis.totalAttempts}
+                {displayKpis.totalAttempts}
               </p>
               <p className="text-xs text-muted-foreground">Mock exam sessions taken</p>
             </div>
@@ -906,7 +936,7 @@ export default function TpoAssessmentsPage() {
                 Avg Pass Rate
               </p>
               <p className="text-2xl font-bold text-foreground">
-                {kpis.avgPassRate}%
+                {displayKpis.avgPassRate}%
               </p>
               <p className="text-xs text-muted-foreground">Overall cohort qualification</p>
             </div>
@@ -983,7 +1013,7 @@ export default function TpoAssessmentsPage() {
                     type="button"
                     onClick={() => {
                       setSelectedBranch(branch);
-                      if (branch !== "ALL") setSelectedDepartment(branch);
+                      setSelectedDepartment(branch === "ALL" ? "All Departments" : branch);
                     }}
                     className={cn(
                       "px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 border",

@@ -29,6 +29,9 @@ import {
   Eye,
   UploadCloud,
   Link2,
+  Maximize2,
+  Minimize2,
+  X,
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api-client";
@@ -96,6 +99,18 @@ export default function TpoResourcesPage() {
   // Delivery Method Segment: Upload PDF vs External Web Link
   const [deliveryMethod, setDeliveryMethod] = useState<"UPLOAD_PDF" | "EXTERNAL_URL">("UPLOAD_PDF");
   const [uploadedPdf, setUploadedPdf] = useState<UploadedFileItem | null>(null);
+
+  // In-App PDF Preview Dialog State
+  const [previewResource, setPreviewResource] = useState<PlacementResourceItem | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleOpenPreview = (resource: PlacementResourceItem) => {
+    setPreviewResource(resource);
+    setIsPreviewFullscreen(true);
+    setIsPreviewModalOpen(true);
+  };
 
   const [formData, setFormData] = useState({
     title: "",
@@ -309,8 +324,8 @@ export default function TpoResourcesPage() {
         description: formData.description.trim() || null,
         category: formData.category,
         resourceType: uploadedPdf ? "PDF" : formData.resourceType,
-        fileUrl: uploadedPdf?.fileUrl || (uploadedPdf?.fileData ? "#" : null),
-        externalUrl: formData.externalUrl.trim() || null,
+        fileUrl: uploadedPdf?.fileData || uploadedPdf?.fileUrl || null,
+        externalUrl: formData.externalUrl.trim() || uploadedPdf?.fileData || uploadedPdf?.fileUrl || null,
         companyName: formData.companyName.trim() || null,
         targetBranches: formData.targetBranches,
         subjectDomain: formData.subjectDomain.trim() || null,
@@ -380,11 +395,93 @@ export default function TpoResourcesPage() {
 
   const getResourceDownloadLink = (resource: PlacementResourceItem) => {
     if (resource.fileUrl) {
-      if (resource.fileUrl.startsWith("http")) return resource.fileUrl;
+      if (resource.fileUrl.startsWith("http") || resource.fileUrl.startsWith("data:")) return resource.fileUrl;
       return `http://localhost:5000${resource.fileUrl}`;
     }
-    return resource.externalUrl || "#";
+    if (resource.externalUrl) {
+      if (resource.externalUrl.startsWith("http") || resource.externalUrl.startsWith("data:")) return resource.externalUrl;
+      if (resource.externalUrl.startsWith("/uploads/")) return `http://localhost:5000${resource.externalUrl}`;
+      return resource.externalUrl;
+    }
+    return "#";
   };
+
+  const handleDownloadResource = async (resource: PlacementResourceItem) => {
+    const rawUrl = getResourceDownloadLink(resource);
+    if (!rawUrl || rawUrl === "#") {
+      alert("No valid download link found for this resource.");
+      return;
+    }
+
+    const cleanTitle = (resource.title || "resource").replace(/[^a-zA-Z0-9_\-]/g, "_");
+    const fileName = cleanTitle.toLowerCase().endsWith(".pdf") ? cleanTitle : `${cleanTitle}.pdf`;
+
+    try {
+      setIsDownloading(true);
+      // For local server or data URLs, fetch as blob for seamless background download
+      if (rawUrl.startsWith("data:") || rawUrl.startsWith("http://localhost:5000") || rawUrl.startsWith("/")) {
+        const response = await fetch(rawUrl);
+        if (!response.ok) throw new Error("Fetch failed");
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+        return;
+      }
+
+      // Direct fallback
+      const downloadUrl = rawUrl.includes("?") ? `${rawUrl}&download=true` : `${rawUrl}?download=true`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.warn("Direct blob download error, triggering fallback direct download:", error);
+      const downloadUrl = rawUrl.includes("?") ? `${rawUrl}&download=true` : `${rawUrl}?download=true`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const filteredResources = useMemo(() => {
+    return resources.filter((r) => {
+      if (selectedBranch && selectedBranch !== "ALL") {
+        const code = selectedBranch.toUpperCase();
+        const matchesBranch =
+          !r.targetBranches ||
+          r.targetBranches.length === 0 ||
+          r.targetBranches.includes("ALL") ||
+          r.targetBranches.includes("All") ||
+          r.targetBranches.some((b) => {
+            const bc = b.toUpperCase();
+            return (
+              bc === code ||
+              bc === "ALL" ||
+              (code === "CSE" && (bc === "CS" || bc === "COMPUTER SCIENCE" || bc.includes("COMPUTER SCIENCE")))
+            );
+          });
+        if (!matchesBranch) return false;
+      }
+      return true;
+    });
+  }, [resources, selectedBranch]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -457,7 +554,7 @@ export default function TpoResourcesPage() {
               type="button"
               onClick={() => {
                 setSelectedBranch(branch);
-                if (branch !== "ALL") setSelectedDepartment(branch);
+                setSelectedDepartment(branch === "ALL" ? "All Departments" : branch);
               }}
               className={cn(
                 "px-2.5 py-1 rounded-md text-xs font-semibold transition-all border",
@@ -515,8 +612,8 @@ export default function TpoResourcesPage() {
             <div className="col-span-full text-center py-16 text-muted-foreground text-xs">
               Loading curated placement learning materials...
             </div>
-          ) : resources.length > 0 ? (
-            resources.map((resource) => {
+          ) : filteredResources.length > 0 ? (
+            filteredResources.map((resource) => {
               const isPdf = resource.resourceType === "PDF" || Boolean(resource.fileUrl);
               const meta = getResourceMeta(resource.resourceType);
               const IconComp = meta.icon;
@@ -555,7 +652,17 @@ export default function TpoResourcesPage() {
 
                     {/* Title & Domain */}
                     <div className="space-y-1">
-                      <h3 className="font-bold text-sm text-foreground line-clamp-2 leading-snug">
+                      <h3
+                        onClick={() => {
+                          if (isPdf) {
+                            handleOpenPreview(resource);
+                          } else if (downloadUrl !== "#") {
+                            window.open(downloadUrl, "_blank");
+                          }
+                        }}
+                        className="font-bold text-sm text-foreground line-clamp-2 leading-snug cursor-pointer hover:text-primary transition-colors"
+                        title={isPdf ? "Click to view PDF document" : "Click to open resource"}
+                      >
                         {resource.title}
                       </h3>
                       {resource.subjectDomain && (
@@ -566,11 +673,9 @@ export default function TpoResourcesPage() {
                     </div>
 
                     {/* Description */}
-                    {resource.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                        {resource.description}
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
+                      {resource.description}
+                    </p>
 
                     {/* Target Branches & File Size */}
                     <div className="flex items-center gap-1 flex-wrap pt-1">
@@ -614,24 +719,42 @@ export default function TpoResourcesPage() {
                       </Button>
                     </div>
 
-                    <a
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline bg-primary/10 px-3 py-1.5 rounded-lg transition-colors hover:bg-primary/20"
-                    >
-                      {isPdf ? (
-                        <>
-                          <Download className="h-3.5 w-3.5" />
-                          <span>View / Download PDF</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>Open Resource</span>
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </>
-                      )}
-                    </a>
+                    {isPdf ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownloadResource(resource)}
+                          disabled={isDownloading}
+                          className="h-7 px-2.5 text-xs font-semibold gap-1.5 text-foreground hover:text-primary hover:border-primary/40 border-border"
+                          title="Download PDF directly"
+                        >
+                          <Download className="h-3 w-3 text-primary" />
+                          <span className="hidden sm:inline">Download</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleOpenPreview(resource)}
+                          className="h-7 px-2.5 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs gap-1"
+                          title="View PDF full window"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>View PDF</span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <a
+                        href={downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline bg-primary/10 px-3 py-1.5 rounded-lg transition-colors hover:bg-primary/20"
+                      >
+                        <span>Open Resource</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
                   </CardFooter>
                 </Card>
               );
@@ -937,6 +1060,130 @@ export default function TpoResourcesPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Dedicated In-App PDF Preview Dialog (Full Window by Default) ─── */}
+      <Dialog open={isPreviewModalOpen} onOpenChange={setIsPreviewModalOpen}>
+        <DialogContent
+          className={cn(
+            "p-0 m-0 border-0 flex flex-col bg-background text-foreground z-50 duration-200 overflow-hidden [&>button.absolute]:hidden",
+            isPreviewFullscreen
+              ? "fixed inset-0 left-0 top-0 translate-x-0 translate-y-0 w-screen h-screen max-w-none max-h-none rounded-none"
+              : "fixed left-[50%] top-[50%] -translate-x-1/2 -translate-y-1/2 w-[95vw] max-w-5xl h-[88vh] max-h-[92vh] rounded-2xl border border-border shadow-2xl"
+          )}
+        >
+          {previewResource && (
+            <>
+              {/* Top Navigation & Action Header */}
+              <div className="h-14 sm:h-16 px-4 sm:px-6 border-b border-border bg-card/95 backdrop-blur flex items-center justify-between gap-3 shrink-0 select-none">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-[10px] font-semibold bg-primary/10 text-primary border-primary/30 py-0 px-1.5 h-4">
+                        PDF Document
+                      </Badge>
+                      {previewResource.companyName && (
+                        <Badge variant="secondary" className="text-[10px] font-medium py-0 px-1.5 h-4">
+                          {previewResource.companyName}
+                        </Badge>
+                      )}
+                      {previewResource.fileSize && (
+                        <span className="text-[11px] text-muted-foreground font-medium hidden sm:inline">
+                          &bull; {previewResource.fileSize}
+                        </span>
+                      )}
+                    </div>
+                    <DialogTitle className="text-sm sm:text-base font-bold text-foreground truncate max-w-[260px] sm:max-w-md md:max-w-lg lg:max-w-2xl leading-tight">
+                      {previewResource.title}
+                    </DialogTitle>
+                  </div>
+                </div>
+
+                {/* Header Action Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Prominent Download Button */}
+                  <Button
+                    onClick={() => handleDownloadResource(previewResource)}
+                    disabled={isDownloading}
+                    className="h-9 px-3.5 sm:px-4 text-xs sm:text-sm font-bold shadow-sm bg-primary hover:bg-primary/90 text-primary-foreground gap-2 transition-all active:scale-95 cursor-pointer"
+                    title="Download this PDF file"
+                  >
+                    <Download className={cn("h-4 w-4", isDownloading && "animate-bounce")} />
+                    <span>{isDownloading ? "Downloading..." : "Download PDF"}</span>
+                  </Button>
+
+                  {/* Open in New Tab */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const url = getResourceDownloadLink(previewResource);
+                      window.open(url, "_blank");
+                    }}
+                    className="h-9 px-3 text-xs font-medium gap-1.5 hidden md:inline-flex border-border/80 hover:bg-muted"
+                    title="Open PDF in a new browser tab"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    <span>Open in Tab</span>
+                  </Button>
+
+                  {/* Toggle Fullscreen / Windowed */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsPreviewFullscreen(!isPreviewFullscreen)}
+                    className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground hover:bg-muted hidden sm:inline-flex"
+                    title={isPreviewFullscreen ? "Exit Fullscreen (Window mode)" : "Full Window"}
+                  >
+                    {isPreviewFullscreen ? (
+                      <Minimize2 className="h-4 w-4" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" />
+                    )}
+                  </Button>
+
+                  {/* Close Dialog */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsPreviewModalOpen(false)}
+                    className="h-9 px-3 text-xs font-medium text-muted-foreground hover:text-foreground gap-1.5 hover:bg-muted border border-border/60 rounded-md"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="hidden sm:inline">Close</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Embedded Document Viewer filling 100% of available height & width */}
+              <div className="flex-1 w-full h-full min-h-0 bg-muted/10 relative overflow-hidden">
+                {previewResource.fileUrl || previewResource.externalUrl ? (
+                  <iframe
+                    src={getResourceDownloadLink(previewResource)}
+                    className="w-full h-full border-0 block"
+                    title={previewResource.title}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center p-6 text-muted-foreground">
+                    <FileText className="h-16 w-16 mb-4 text-muted-foreground/40" />
+                    <p className="text-base font-semibold text-foreground">No preview available for this document</p>
+                    <p className="text-xs text-muted-foreground mt-1 mb-4">Please download the file directly to view its contents.</p>
+                    <Button
+                      onClick={() => handleDownloadResource(previewResource)}
+                      className="gap-2 bg-primary text-primary-foreground font-semibold"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Download PDF</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 /**
  * Helper to compute start and end date bounds
@@ -53,12 +54,13 @@ export async function getInterviews(req, res, next) {
       where.mode = mode;
     }
 
-    if (department && department !== 'ALL') {
+    const normDept = normalizeDepartment(department);
+    if (normDept) {
       where.application = {
         ...(where.application || {}),
         student: {
           ...(where.application?.student || {}),
-          department
+          department: { equals: normDept, mode: 'insensitive' }
         }
       };
     }

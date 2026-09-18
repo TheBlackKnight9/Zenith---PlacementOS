@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 const SEED_RESOURCES = [
   {
@@ -23,7 +24,8 @@ const SEED_RESOURCES = [
     description: 'Solved test papers covering Quantitative Aptitude, Logical Ability, Verbal English, and Advanced Coding section for TCS Ninja & Digital.',
     category: 'COMPANY_SPECIFIC',
     resourceType: 'PDF',
-    externalUrl: 'https://placementos.edu/resources/tcs_nqt_master_archive.pdf',
+    fileUrl: '/uploads/resources/tcs_nqt_master_archive.pdf',
+    externalUrl: '/uploads/resources/tcs_nqt_master_archive.pdf',
     companyName: 'TCS',
     targetBranches: ['ALL'],
     subjectDomain: 'Aptitude & Coding',
@@ -79,7 +81,8 @@ const SEED_RESOURCES = [
     description: 'Top 50 HR questions: "Tell me about yourself", conflict resolution, situational judgment, and salary negotiation frameworks.',
     category: 'INTERVIEW_PREP',
     resourceType: 'PDF',
-    externalUrl: 'https://placementos.edu/resources/hr_interview_script_handbook.pdf',
+    fileUrl: '/uploads/resources/hr_interview_script_handbook.pdf',
+    externalUrl: '/uploads/resources/hr_interview_script_handbook.pdf',
     companyName: null,
     targetBranches: ['ALL'],
     subjectDomain: 'HR & Behavioral',
@@ -93,7 +96,7 @@ const SEED_RESOURCES = [
     description: 'Interview questions on C pointers, microcontroller architecture, Verilog HDL, static timing analysis, and I2C/SPI protocols.',
     category: 'BRANCH_CURATED',
     resourceType: 'QUESTION_BANK',
-    externalUrl: 'https://placementos.edu/resources/embedded_vlsi_qbank.pdf',
+    externalUrl: 'https://github.com/placementos-resources/embedded-vlsi-qbank',
     companyName: 'Qualcomm',
     targetBranches: ['ECE', 'EE'],
     subjectDomain: 'Embedded & VLSI',
@@ -107,7 +110,8 @@ const SEED_RESOURCES = [
     description: 'Standard campus interview questions for Tata Motors, L&T, and Mahindra covering IC engines, Som stress analysis, and fluid mechanics.',
     category: 'BRANCH_CURATED',
     resourceType: 'PDF',
-    externalUrl: 'https://placementos.edu/resources/mechanical_core_prep.pdf',
+    fileUrl: '/uploads/resources/mechanical_core_prep.pdf',
+    externalUrl: '/uploads/resources/mechanical_core_prep.pdf',
     companyName: 'L&T',
     targetBranches: ['MECH'],
     subjectDomain: 'Core Mechanical',
@@ -148,15 +152,13 @@ export async function getResources(req, res, next) {
       where.isFeatured = isFeatured === 'true';
     }
 
-    if (
-      department &&
-      department.trim().toUpperCase() !== 'ALL' &&
-      department.trim().toUpperCase() !== 'ALL DEPARTMENTS'
-    ) {
-      const deptCode = department.trim().toUpperCase();
+    const normDept = normalizeDepartment(department);
+    if (normDept) {
       where.OR = [
-        { targetBranches: { has: deptCode } },
-        { targetBranches: { has: 'ALL' } }
+        { targetBranches: { has: normDept } },
+        { targetBranches: { has: 'ALL' } },
+        { targetBranches: { has: 'All' } },
+        { targetBranches: { hasSome: [normDept, 'ALL', 'All'] } }
       ];
     }
 
@@ -338,6 +340,8 @@ export async function updateResource(req, res, next) {
       category,
       resourceType,
       fileUrl,
+      fileData,
+      fileName,
       externalUrl,
       companyName,
       targetBranches,
@@ -365,6 +369,30 @@ export async function updateResource(req, res, next) {
     if (fileSize !== undefined) updateData.fileSize = fileSize ? fileSize.trim() : null;
     if (tags !== undefined) updateData.tags = Array.isArray(tags) ? tags : typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : [];
     if (isFeatured !== undefined) updateData.isFeatured = Boolean(isFeatured);
+
+    // If a new PDF file was uploaded during edit
+    if (fileData) {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'resources');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const cleanBaseName = fileName
+        ? fileName.replace(/[^a-zA-Z0-9_.-]/g, '_')
+        : 'resource_document.pdf';
+      const finalName = cleanBaseName.toLowerCase().endsWith('.pdf') ? cleanBaseName : `${cleanBaseName}.pdf`;
+      const uniqueName = `${Date.now()}-${finalName}`;
+      const filePath = path.join(uploadDir, uniqueName);
+
+      const base64Clean = fileData.replace(/^data:[^;]+;base64,/, '');
+      const buffer = Buffer.from(base64Clean, 'base64');
+      await fs.promises.writeFile(filePath, buffer);
+
+      updateData.fileUrl = `/uploads/resources/${uniqueName}`;
+      updateData.fileSize = `${(buffer.length / (1024 * 1024)).toFixed(1)} MB`;
+      if (!externalUrl) {
+        updateData.externalUrl = updateData.fileUrl;
+      }
+    }
 
     const updated = await prisma.placementResource.update({
       where: { id },

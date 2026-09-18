@@ -1,6 +1,7 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 /**
  * Submit an Application for a Placement Drive or Internship Opportunity
@@ -307,8 +308,9 @@ export async function getTpoApplications(req, res, next) {
     if (internshipId) where.internshipId = internshipId;
     if (status && status !== 'ALL') where.status = status;
 
-    if (department && department !== 'ALL') {
-      where.student = { ...(where.student || {}), department };
+    const normDept = normalizeDepartment(department);
+    if (normDept) {
+      where.student = { ...(where.student || {}), department: { equals: normDept, mode: 'insensitive' } };
     }
 
     if (search && search.trim()) {

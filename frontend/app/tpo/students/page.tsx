@@ -38,6 +38,8 @@ import {
   MoreHorizontal,
   SlidersHorizontal,
   Eye,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ColumnDef,
@@ -204,6 +206,22 @@ export default function StudentsDirectoryPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importStatusMessage, setImportStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Delete Confirmation State
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: "single" | "bulk";
+    student?: StudentListItem | { id: string; name: string; rollNumber: string; email?: string };
+    students?: StudentListItem[];
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteSingleStudent = useCallback((student: StudentListItem) => {
+    setDeleteTarget({ type: "single", student });
+    setDeleteError(null);
+    setIsDeleteDialogOpen(true);
+  }, []);
 
   // Synchronize topbar department filter with page department filter
   useEffect(() => {
@@ -493,6 +511,14 @@ export default function StudentsDirectoryPage() {
                     <Copy className="h-3.5 w-3.5 text-muted-foreground" />
                     Copy Roll Number
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleDeleteSingleStudent(student)}
+                    className="text-xs cursor-pointer gap-2 text-destructive focus:text-destructive focus:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove Student
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -500,7 +526,7 @@ export default function StudentsDirectoryPage() {
         },
       },
     ],
-    [openStudentDetail]
+    [openStudentDetail, handleDeleteSingleStudent]
   );
 
   // Initialize TanStack React Table
@@ -526,6 +552,39 @@ export default function StudentsDirectoryPage() {
     navigator.clipboard.writeText(emails);
     setCopiedNotification(true);
     setTimeout(() => setCopiedNotification(false), 2500);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      if (deleteTarget.type === "single" && deleteTarget.student) {
+        await apiClient.delete(`/tpo/students/${deleteTarget.student.id}`);
+        if (activeStudentId === deleteTarget.student.id) {
+          setActiveStudentId(null);
+          setStudentDetail(null);
+        }
+      } else if (deleteTarget.type === "bulk" && deleteTarget.students?.length) {
+        const ids = deleteTarget.students.map((s) => s.id);
+        await apiClient.post(`/tpo/students/bulk-delete`, { ids });
+        table.resetRowSelection();
+        if (activeStudentId && ids.includes(activeStudentId)) {
+          setActiveStudentId(null);
+          setStudentDetail(null);
+        }
+      }
+
+      setIsDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      await loadStudents();
+    } catch (err: any) {
+      console.error("Failed to delete student(s):", err);
+      setDeleteError(err.message || "Failed to remove student(s). Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Add Student Submit Handler
@@ -1138,6 +1197,23 @@ export default function StudentsDirectoryPage() {
             <Download className="h-4 w-4 text-primary" />
             Export Selected
           </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              const selectedStudents = table.getFilteredSelectedRowModel().rows.map((r) => r.original);
+              setDeleteTarget({
+                type: "bulk",
+                students: selectedStudents,
+              });
+              setDeleteError(null);
+              setIsDeleteDialogOpen(true);
+            }}
+            className="h-8 text-xs gap-1.5"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Remove Selected
+          </Button>
           <button
             onClick={() => table.resetRowSelection()}
             className="p-1 text-muted-foreground hover:text-foreground rounded-md transition-colors ml-1"
@@ -1174,6 +1250,28 @@ export default function StudentsDirectoryPage() {
                       </div>
                     </div>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDeleteTarget({
+                        type: "single",
+                        student: {
+                          id: studentDetail.id,
+                          name: studentDetail.name || `${studentDetail.firstName || ''} ${studentDetail.lastName || ''}`.trim() || studentDetail.rollNumber,
+                          rollNumber: studentDetail.rollNumber,
+                          email: studentDetail.email,
+                        },
+                      });
+                      setDeleteError(null);
+                      setIsDeleteDialogOpen(true);
+                    }}
+                    className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                    title="Remove Student"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1806,6 +1904,139 @@ export default function StudentsDirectoryPage() {
                 </>
               ) : (
                 <>Import {parsedRows.length} Students</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Delete Confirmation Modal ─── */}
+      <Dialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setIsDeleteDialogOpen(open);
+            if (!open) {
+              setDeleteTarget(null);
+              setDeleteError(null);
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  {deleteTarget?.type === "bulk"
+                    ? `Remove ${deleteTarget.students?.length} Students?`
+                    : "Remove Student?"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  This action is permanent and will permanently delete records from the system.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {deleteError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            {deleteTarget?.type === "single" && deleteTarget.student && (
+              <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs space-y-1">
+                <div className="font-semibold text-foreground text-sm">
+                  {deleteTarget.student.name}
+                </div>
+                <div className="text-muted-foreground flex items-center gap-2">
+                  <span>
+                    Roll: <span className="font-mono font-medium text-foreground">{deleteTarget.student.rollNumber}</span>
+                  </span>
+                  {"email" in deleteTarget.student && deleteTarget.student.email && (
+                    <>
+                      <span>•</span>
+                      <span>{deleteTarget.student.email}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {deleteTarget?.type === "bulk" && deleteTarget.students && (
+              <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs space-y-2">
+                <div className="text-muted-foreground">
+                  You are about to permanently delete{" "}
+                  <span className="font-bold text-foreground">
+                    {deleteTarget.students.length} students
+                  </span>
+                  :
+                </div>
+                <div className="max-h-32 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
+                  {deleteTarget.students.slice(0, 5).map((s) => (
+                    <div key={s.id} className="text-foreground flex items-center justify-between">
+                      <span>{s.name} ({s.rollNumber})</span>
+                      <span className="text-muted-foreground text-[10px]">{s.department}</span>
+                    </div>
+                  ))}
+                  {deleteTarget.students.length > 5 && (
+                    <div className="text-muted-foreground text-center pt-1 italic">
+                      + {deleteTarget.students.length - 5} more students
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-destructive">Consequences of this action:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-muted-foreground">
+                <li>Student profile, academic records, and user login will be deleted.</li>
+                <li>All job applications, interview schedules, and uploads will be purged.</li>
+                <li>This action cannot be undone.</li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setDeleteTarget(null);
+                setDeleteError(null);
+              }}
+              disabled={isDeleting}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="text-xs gap-1.5"
+            >
+              {isDeleting ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {deleteTarget?.type === "bulk"
+                    ? `Remove ${deleteTarget.students?.length} Students`
+                    : "Remove Student"}
+                </>
               )}
             </Button>
           </DialogFooter>

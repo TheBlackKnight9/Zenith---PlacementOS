@@ -96,6 +96,7 @@ export default function TpoApplicationsPage() {
     selectedDepartmentCode,
     setSelectedDepartment,
     getDepartmentName,
+    isDepartmentMatch,
   } = useDepartment();
 
   const [applications, setApplications] = useState<TpoApplication[]>([]);
@@ -110,6 +111,12 @@ export default function TpoApplicationsPage() {
   useEffect(() => {
     setSelectedDept(selectedDepartmentCode || "ALL");
   }, [selectedDepartmentCode]);
+
+  // Client-side safeguard filter for instantaneous reactivity
+  const filteredApplications = useMemo(() => {
+    if (!selectedDept || selectedDept === "ALL") return applications;
+    return applications.filter((app) => isDepartmentMatch(app?.student?.department, selectedDept));
+  }, [applications, selectedDept, isDepartmentMatch]);
 
   // Modal editing state
   const [editStatus, setEditStatus] = useState<string>("APPLIED");
@@ -305,7 +312,7 @@ export default function TpoApplicationsPage() {
             </p>
           </div>
           <Badge variant="outline" className="text-xs font-semibold">
-            Showing {applications.length} of {total} Applications
+            Showing {filteredApplications.length} of {total} Applications
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
@@ -328,8 +335,8 @@ export default function TpoApplicationsPage() {
                       Loading application dossiers...
                     </TableCell>
                   </TableRow>
-                ) : applications.length > 0 ? (
-                  applications.map((app) => {
+                ) : filteredApplications.length > 0 ? (
+                  filteredApplications.map((app) => {
                     const totalSteps = app.selectionProcess?.length || 4;
                     const curStepNum = app.currentStep || 1;
                     const curStepObj = app.selectionProcess?.find((s) => s.step === curStepNum);

@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 /**
  * Create a new Placement Drive (with rich college-format data)
@@ -136,10 +137,20 @@ export async function createPlacementDrive(req, res, next) {
  */
 export async function getAllPlacementDrives(req, res, next) {
   try {
-    const { status } = req.query;
+    const { status, department, branch } = req.query;
     const where = {};
     if (status && status !== 'ALL') {
       where.status = status;
+    }
+
+    const normDept = normalizeDepartment(department || branch);
+    if (normDept) {
+      where.OR = [
+        { eligibleBranches: { has: normDept } },
+        { eligibleBranches: { has: 'ALL' } },
+        { eligibleBranches: { has: 'All' } },
+        { eligibleBranches: { hasSome: [normDept, 'ALL', 'All'] } }
+      ];
     }
 
     const drives = await prisma.placementDrive.findMany({

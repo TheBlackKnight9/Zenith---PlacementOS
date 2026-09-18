@@ -126,7 +126,13 @@ interface ReportArchiveItem {
 }
 
 export default function TpoReportsPage() {
-  const { selectedDepartment, setSelectedDepartment } = useDepartment();
+  const {
+    selectedDepartment,
+    selectedDepartmentCode,
+    setSelectedDepartment,
+    departments,
+    isDepartmentMatch,
+  } = useDepartment();
 
   const [batchYear, setBatchYear] = useState<string>("2026");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("naac");
@@ -160,8 +166,8 @@ export default function TpoReportsPage() {
       if (!isSilent) setLoading(true);
 
       const params = new URLSearchParams();
-      if (selectedDepartment && selectedDepartment !== "ALL" && selectedDepartment !== "All Departments") {
-        params.append("department", selectedDepartment);
+      if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+        params.append("department", selectedDepartmentCode);
       }
       if (batchYear && batchYear !== "ALL") {
         params.append("batchYear", batchYear);
@@ -184,7 +190,7 @@ export default function TpoReportsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDepartment, batchYear]);
+  }, [selectedDepartmentCode, batchYear]);
 
   useEffect(() => {
     loadReportsData();
@@ -326,11 +332,15 @@ export default function TpoReportsPage() {
     }
   };
 
-  // Filtered NAAC rows by search
+  // Filtered NAAC rows by department & search
   const filteredNaacRows = useMemo(() => {
-    if (!searchQuery) return naacRows;
+    let rows = naacRows;
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      rows = rows.filter((r) => isDepartmentMatch(r.department));
+    }
+    if (!searchQuery) return rows;
     const q = searchQuery.toLowerCase();
-    return naacRows.filter(
+    return rows.filter(
       (r) =>
         r.studentName.toLowerCase().includes(q) ||
         r.rollNumber.toLowerCase().includes(q) ||
@@ -338,20 +348,24 @@ export default function TpoReportsPage() {
         r.department.toLowerCase().includes(q) ||
         r.appointmentRefNo.toLowerCase().includes(q)
     );
-  }, [naacRows, searchQuery]);
+  }, [naacRows, searchQuery, selectedDepartmentCode, isDepartmentMatch]);
 
-  // Filtered Unplaced rows by search
+  // Filtered Unplaced rows by department & search
   const filteredUnplacedRows = useMemo(() => {
-    if (!searchQuery) return unplacedRows;
+    let rows = unplacedRows;
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      rows = rows.filter((r) => isDepartmentMatch(r.department));
+    }
+    if (!searchQuery) return rows;
     const q = searchQuery.toLowerCase();
-    return unplacedRows.filter(
+    return rows.filter(
       (r) =>
         r.fullName.toLowerCase().includes(q) ||
         r.rollNumber.toLowerCase().includes(q) ||
         r.department.toLowerCase().includes(q) ||
         r.skills.toLowerCase().includes(q)
     );
-  }, [unplacedRows, searchQuery]);
+  }, [unplacedRows, searchQuery, selectedDepartmentCode, isDepartmentMatch]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -401,21 +415,19 @@ export default function TpoReportsPage() {
               <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-[11px] font-medium text-muted-foreground">Branch:</span>
               <Select
-                value={selectedDepartment || "ALL"}
-                onValueChange={(val) => setSelectedDepartment(val)}
+                value={selectedDepartmentCode || "ALL"}
+                onValueChange={(val) => setSelectedDepartment(val === "ALL" ? "All Departments" : val)}
               >
                 <SelectTrigger className="h-7 text-xs border-0 bg-transparent shadow-none focus:ring-0 px-1 py-0 w-[120px] font-semibold text-foreground">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Branches</SelectItem>
-                  <SelectItem value="CSE">CSE</SelectItem>
-                  <SelectItem value="IT">IT</SelectItem>
-                  <SelectItem value="AI & DS">AI & DS</SelectItem>
-                  <SelectItem value="ECE">ECE</SelectItem>
-                  <SelectItem value="MECH">MECH</SelectItem>
-                  <SelectItem value="CIVIL">CIVIL</SelectItem>
-                  <SelectItem value="EE">EE</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept.code} value={dept.code}>
+                      {dept.code}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

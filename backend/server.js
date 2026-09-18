@@ -17,6 +17,9 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    frameguard: false,
   })
 );
 
@@ -49,8 +52,23 @@ app.use(
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static uploads serving
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Static uploads serving with cross-origin & inline PDF preview headers
+app.use(
+  '/uploads',
+  (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.query.download === 'true') {
+      const filename = path.basename(req.path);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    } else {
+      res.setHeader('Content-Disposition', 'inline');
+    }
+    res.removeHeader('X-Frame-Options');
+    next();
+  },
+  express.static(path.join(process.cwd(), 'uploads'))
+);
 
 // 2. Request Logger (Development)
 if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {

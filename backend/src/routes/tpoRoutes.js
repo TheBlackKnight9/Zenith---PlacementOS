@@ -5,6 +5,8 @@ import {
   getStudentById,
   bulkImportStudents,
   createStudent,
+  deleteStudent,
+  bulkDeleteStudents,
   getDepartmentsAnalytics,
   updateDepartmentCoordinator,
   createDepartment,
@@ -27,6 +29,8 @@ router.post('/departments/coordinator', updateDepartmentCoordinator);
 router.get('/students', getStudents);
 router.get('/students/:id', getStudentById);
 router.post('/students', createStudent);
+router.delete('/students/:id', deleteStudent);
+router.post('/students/bulk-delete', bulkDeleteStudents);
 router.post('/students/bulk-import', bulkImportStudents);
 
 export default router;

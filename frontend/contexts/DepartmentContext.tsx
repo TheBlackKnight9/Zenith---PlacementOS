@@ -28,6 +28,7 @@ interface DepartmentContextType {
   refreshDepartments: () => Promise<void>;
   getDepartmentName: (code: string) => string;
   getDepartmentCode: (name: string) => string;
+  isDepartmentMatch: (branches: string | string[] | null | undefined, deptCode?: string) => boolean;
 }
 
 const DepartmentContext = createContext<DepartmentContextType>({
@@ -40,10 +41,11 @@ const DepartmentContext = createContext<DepartmentContextType>({
   refreshDepartments: async () => {},
   getDepartmentName: (code) => code,
   getDepartmentCode: (name) => name,
+  isDepartmentMatch: () => true,
 });
 
 export function DepartmentProvider({ children }: { children: React.ReactNode }) {
-  const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
+  const [selectedDepartmentState, setSelectedDepartmentState] = useState("All Departments");
   const [departments, setDepartments] = useState<DepartmentOption[]>(DEFAULT_DEPARTMENTS);
   const [isLoadingDepartments, setIsLoadingDepartments] = useState(false);
 
@@ -69,31 +71,48 @@ export function DepartmentProvider({ children }: { children: React.ReactNode }) 
     refreshDepartments();
   }, [refreshDepartments]);
 
+  const setSelectedDepartment = useCallback((val: string) => {
+    if (!val || val === "ALL" || val === "All Departments" || val === "All Branches") {
+      setSelectedDepartmentState("All Departments");
+      return;
+    }
+    const match = departments.find(
+      (d) =>
+        d.code.toUpperCase() === val.toUpperCase() ||
+        d.name.toLowerCase() === val.toLowerCase()
+    );
+    if (match) {
+      setSelectedDepartmentState(match.name);
+    } else {
+      setSelectedDepartmentState(val);
+    }
+  }, [departments]);
+
   // If currently selected department is deleted, reset to 'All Departments'
   useEffect(() => {
-    if (selectedDepartment && selectedDepartment !== "All Departments" && selectedDepartment !== "ALL") {
+    if (selectedDepartmentState && selectedDepartmentState !== "All Departments" && selectedDepartmentState !== "ALL") {
       const exists = departments.some(
         (d) =>
-          d.code.toUpperCase() === selectedDepartment.toUpperCase() ||
-          d.name.toLowerCase() === selectedDepartment.toLowerCase()
+          d.code.toUpperCase() === selectedDepartmentState.toUpperCase() ||
+          d.name.toLowerCase() === selectedDepartmentState.toLowerCase()
       );
       if (!exists) {
-        setSelectedDepartment("All Departments");
+        setSelectedDepartmentState("All Departments");
       }
     }
-  }, [departments, selectedDepartment]);
+  }, [departments, selectedDepartmentState]);
 
   const departmentCodes = useMemo(() => departments.map((d) => d.code), [departments]);
 
   const selectedDepartmentCode = useMemo(() => {
-    if (!selectedDepartment || selectedDepartment === "All Departments" || selectedDepartment === "ALL") {
+    if (!selectedDepartmentState || selectedDepartmentState === "All Departments" || selectedDepartmentState === "ALL") {
       return "ALL";
     }
     const match = departments.find(
-      (d) => d.code.toUpperCase() === selectedDepartment.toUpperCase() || d.name.toLowerCase() === selectedDepartment.toLowerCase()
+      (d) => d.code.toUpperCase() === selectedDepartmentState.toUpperCase() || d.name.toLowerCase() === selectedDepartmentState.toLowerCase()
     );
-    return match ? match.code : selectedDepartment.toUpperCase();
-  }, [selectedDepartment, departments]);
+    return match ? match.code : selectedDepartmentState.toUpperCase();
+  }, [selectedDepartmentState, departments]);
 
   const getDepartmentName = useCallback(
     (code: string) => {
@@ -115,10 +134,29 @@ export function DepartmentProvider({ children }: { children: React.ReactNode }) 
     [departments]
   );
 
+  const isDepartmentMatch = useCallback(
+    (branches: string | string[] | null | undefined, deptCode?: string) => {
+      const target = deptCode || selectedDepartmentCode;
+      if (!target || target === "ALL") return true;
+      if (!branches) return false;
+      const list = Array.isArray(branches) ? branches : [branches];
+      return list.some((b) => {
+        const u = String(b).toUpperCase();
+        return (
+          u === target.toUpperCase() ||
+          u === "ALL" ||
+          u === "ALL DEPARTMENTS" ||
+          (target === "CSE" && (u === "CS" || u === "COMPUTER SCIENCE" || u.includes("COMPUTER SCIENCE")))
+        );
+      });
+    },
+    [selectedDepartmentCode]
+  );
+
   return (
     <DepartmentContext.Provider
       value={{
-        selectedDepartment,
+        selectedDepartment: selectedDepartmentState,
         selectedDepartmentCode,
         setSelectedDepartment,
         departments,
@@ -127,6 +165,7 @@ export function DepartmentProvider({ children }: { children: React.ReactNode }) 
         refreshDepartments,
         getDepartmentName,
         getDepartmentCode,
+        isDepartmentMatch,
       }}
     >
       {children}

@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 const DEPT_METADATA = [
   { code: 'CSE', name: 'Computer Science & Engineering', color: '#3b82f6' },
@@ -18,28 +19,7 @@ const DEPT_METADATA = [
 export async function getPlacementAnalytics(req, res, next) {
   try {
     const { department, batchYear, cycle } = req.query;
-
-    const deptMap = {
-      'computer science engineering': 'CSE',
-      'information technology': 'IT',
-      'electronics & communication': 'ECE',
-      'mechanical engineering': 'MECH',
-      'civil engineering': 'CIVIL',
-      'electrical engineering': 'EE',
-      'artificial intelligence & ds': 'AI & DS',
-      'ai & ds': 'AI & DS',
-      'cse': 'CSE',
-      'it': 'IT',
-      'ece': 'ECE',
-      'mech': 'MECH',
-      'civil': 'CIVIL',
-      'ee': 'EE',
-    };
-
-    let targetDept = null;
-    if (department && department !== 'ALL' && department !== 'All Departments') {
-      targetDept = deptMap[department.trim().toLowerCase()] || department.trim().toUpperCase();
-    }
+    const targetDept = normalizeDepartment(department);
 
     const studentWhere = {};
     if (targetDept) {

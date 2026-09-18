@@ -171,7 +171,13 @@ const ROUND_PRESETS = [
 ];
 
 export default function TpoInterviewsPage() {
-  const { departmentCodes } = useDepartment();
+  const {
+    departmentCodes,
+    selectedDepartmentCode,
+    setSelectedDepartment,
+    getDepartmentName,
+    isDepartmentMatch,
+  } = useDepartment();
 
   // State: Data & Loading
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
@@ -193,6 +199,22 @@ export default function TpoInterviewsPage() {
   const [modeFilter, setModeFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
+
+  // Sync with global topbar department filter
+  useEffect(() => {
+    setDepartmentFilter(selectedDepartmentCode || "ALL");
+  }, [selectedDepartmentCode]);
+
+  // Filtered interviews list
+  const filteredInterviews = useMemo(() => {
+    return interviews.filter((item) => {
+      if (departmentFilter && departmentFilter !== "ALL") {
+        const studentDept = item.student?.department;
+        if (!isDepartmentMatch(studentDept, departmentFilter)) return false;
+      }
+      return true;
+    });
+  }, [interviews, departmentFilter, isDepartmentMatch]);
 
   // Selection
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
@@ -741,7 +763,7 @@ export default function TpoInterviewsPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
-              {interviews.length} Interviews Listed
+              {filteredInterviews.length} Interviews Listed
             </span>
 
             {/* View Mode Switcher */}
@@ -874,7 +896,13 @@ export default function TpoInterviewsPage() {
 
             {/* Department Filter */}
             {departmentCodes && departmentCodes.length > 0 && (
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <Select
+                value={departmentFilter}
+                onValueChange={(code) => {
+                  setDepartmentFilter(code);
+                  setSelectedDepartment(code === "ALL" ? "All Departments" : getDepartmentName(code));
+                }}
+              >
                 <SelectTrigger className="h-8 text-xs w-[120px] bg-card border-input font-medium">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
@@ -936,7 +964,7 @@ export default function TpoInterviewsPage() {
                         Loading interview schedules...
                       </TableCell>
                     </TableRow>
-                  ) : interviews.length === 0 ? (
+                  ) : filteredInterviews.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center py-16 text-muted-foreground text-sm">
                         <CalendarClock className="h-8 w-8 mx-auto mb-2 opacity-40 text-muted-foreground" />
@@ -947,7 +975,7 @@ export default function TpoInterviewsPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    interviews.map((item) => {
+                    filteredInterviews.map((item) => {
                       const timeInfo = formatDateTimeDisplay(item.scheduledAt);
                       const isSelected = !!selectedRows[item.id];
                       const isOnline = item.mode === "ONLINE";
@@ -1232,7 +1260,7 @@ export default function TpoInterviewsPage() {
                   <div className="h-8 bg-muted/40 rounded mt-6" />
                 </Card>
               ))
-            ) : interviews.length === 0 ? (
+            ) : filteredInterviews.length === 0 ? (
               <div className="col-span-full text-center py-16 border rounded-xl bg-card border-border">
                 <CalendarClock className="h-8 w-8 mx-auto mb-2 opacity-40 text-muted-foreground" />
                 <p className="font-medium text-foreground">No interview sessions found.</p>
@@ -1241,7 +1269,7 @@ export default function TpoInterviewsPage() {
                 </p>
               </div>
             ) : (
-              interviews.map((item) => {
+              filteredInterviews.map((item) => {
                 const isOnline = item.mode === "ONLINE";
 
                 return (

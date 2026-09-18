@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment, buildStudentDeptFilter } from '../utils/departmentHelper.js';
 
 /**
  * TPO Dashboard KPI Stats
@@ -9,29 +10,7 @@ import { sendSuccess, sendError } from '../utils/apiResponse.js';
 export async function getDashboardStats(req, res, next) {
   try {
     const { department } = req.query;
-
-    const deptMap = {
-      'computer science engineering': 'CSE',
-      'information technology': 'IT',
-      'electronics & communication': 'ECE',
-      'mechanical engineering': 'MECH',
-      'civil engineering': 'CIVIL',
-      'electrical engineering': 'EE',
-      'mba': 'MBA',
-      'applied sciences': 'AS',
-      'artificial intelligence & ds': 'AI & DS',
-      'ai & ds': 'AI & DS',
-      'cse': 'CSE',
-      'it': 'IT',
-      'ece': 'ECE',
-      'mech': 'MECH',
-      'civil': 'CIVIL',
-    };
-
-    let targetDept = null;
-    if (department && department !== 'ALL' && department !== 'All Departments') {
-      targetDept = deptMap[department.trim().toLowerCase()] || department.trim();
-    }
+    const targetDept = normalizeDepartment(department);
 
     const studentFilter = targetDept ? { department: { equals: targetDept, mode: 'insensitive' } } : {};
     const appFilter = targetDept ? { student: { department: { equals: targetDept, mode: 'insensitive' } } } : {};
@@ -254,8 +233,9 @@ export async function getStudents(req, res, next) {
     // Construct Prisma WHERE filter
     const where = {};
 
-    if (department && department !== 'ALL') {
-      where.department = department.toUpperCase();
+    const targetDept = normalizeDepartment(department);
+    if (targetDept) {
+      where.department = { equals: targetDept, mode: 'insensitive' };
     }
 
     if (batchYear) {
@@ -656,6 +636,79 @@ export async function createStudent(req, res, next) {
         applicationsCount: 0,
         skills: skills ? (Array.isArray(skills) ? skills : String(skills).split(',').map(s => s.trim())) : []
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Delete a Single Student
+ * DELETE /api/tpo/students/:id
+ */
+export async function deleteStudent(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const student = await prisma.student.findUnique({
+      where: { id },
+      select: { id: true, userId: true, firstName: true, lastName: true, rollNumber: true }
+    });
+
+    if (!student) {
+      return sendError(res, 404, 'Student not found', { code: 'STUDENT_NOT_FOUND' });
+    }
+
+    // Delete user account if linked (cascades to student, applications, skills, assessment results)
+    if (student.userId) {
+      await prisma.user.delete({ where: { id: student.userId } });
+    } else {
+      await prisma.student.delete({ where: { id } });
+    }
+
+    return sendSuccess(res, 200, `Student ${student.firstName} ${student.lastName} (${student.rollNumber}) deleted successfully`, {
+      deletedId: id,
+      rollNumber: student.rollNumber
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Bulk Delete Students
+ * POST /api/tpo/students/bulk-delete
+ */
+export async function bulkDeleteStudents(req, res, next) {
+  try {
+    const { studentIds } = req.body;
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return sendError(res, 400, 'Invalid payload: studentIds array is required', { code: 'INVALID_PAYLOAD' });
+    }
+
+    const students = await prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true, userId: true, rollNumber: true }
+    });
+
+    if (students.length === 0) {
+      return sendError(res, 404, 'No matching students found to delete', { code: 'STUDENTS_NOT_FOUND' });
+    }
+
+    const userIds = students.map(s => s.userId).filter(Boolean);
+
+    // Delete linked users (cascades to students, applications, results, skills)
+    if (userIds.length > 0) {
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    }
+
+    // Ensure any remaining records without user accounts are removed
+    await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
+
+    return sendSuccess(res, 200, `${students.length} student(s) permanently removed`, {
+      deletedCount: students.length,
+      deletedIds: students.map(s => s.id)
     });
   } catch (error) {
     next(error);

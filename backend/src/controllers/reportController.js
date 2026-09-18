@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 // In-memory archive for recent generated reports
 let generatedReportsArchive = [
@@ -190,8 +191,9 @@ export async function getNaacReport(req, res, next) {
     const { department, batchYear } = req.query;
 
     const studentWhere = {};
-    if (department && department !== 'ALL' && department !== 'All Departments') {
-      studentWhere.department = { equals: department, mode: 'insensitive' };
+    const targetDept = normalizeDepartment(department);
+    if (targetDept) {
+      studentWhere.department = { equals: targetDept, mode: 'insensitive' };
     }
     if (batchYear && batchYear !== 'ALL' && batchYear !== 'All Batches') {
       const yr = parseInt(batchYear, 10);
@@ -329,8 +331,9 @@ export async function getUnplacedStudentsReport(req, res, next) {
     const studentWhere = {
       placementStatus: false,
     };
-    if (department && department !== 'ALL' && department !== 'All Departments') {
-      studentWhere.department = { equals: department, mode: 'insensitive' };
+    const targetDept = normalizeDepartment(department);
+    if (targetDept) {
+      studentWhere.department = { equals: targetDept, mode: 'insensitive' };
     }
     if (batchYear && batchYear !== 'ALL' && batchYear !== 'All Batches') {
       const yr = parseInt(batchYear, 10);
