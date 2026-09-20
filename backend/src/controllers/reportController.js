@@ -3,56 +3,7 @@ import { sendSuccess, sendError } from '../utils/apiResponse.js';
 import { normalizeDepartment } from '../utils/departmentHelper.js';
 
 // In-memory archive for recent generated reports
-let generatedReportsArchive = [
-  {
-    id: 'rep-001',
-    title: 'NIRF_2025_UG4Year_Table2.csv',
-    template: 'NIRF Placement & Higher Studies',
-    batchYear: 2025,
-    department: 'All Departments',
-    recordCount: 540,
-    fileSize: '42.8 KB',
-    format: 'CSV',
-    generatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    author: 'TPO Administration',
-  },
-  {
-    id: 'rep-002',
-    title: 'NAAC_Criteria_5.2.1_Placed_Students_Ledger.csv',
-    template: 'NAAC Placed Student Ledger',
-    batchYear: 2026,
-    department: 'All Departments',
-    recordCount: 482,
-    fileSize: '78.2 KB',
-    format: 'CSV',
-    generatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    author: 'TPO Administration',
-  },
-  {
-    id: 'rep-003',
-    title: 'Annual_Placement_Executive_Dossier_2025_26.pdf',
-    template: 'Annual Placement Executive Summary',
-    batchYear: 2026,
-    department: 'All Departments',
-    recordCount: 68,
-    fileSize: '1.4 MB',
-    format: 'PDF',
-    generatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-    author: 'TPO Administration',
-  },
-  {
-    id: 'rep-004',
-    title: 'Unplaced_Students_Remediation_List.csv',
-    template: 'Unplaced Students Remediation',
-    batchYear: 2026,
-    department: 'CSE, IT, ECE',
-    recordCount: 98,
-    fileSize: '18.5 KB',
-    format: 'CSV',
-    generatedAt: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
-    author: 'TPO Administration',
-  },
-];
+let generatedReportsArchive = [];
 
 /**
  * Get Available Report Templates
@@ -130,44 +81,58 @@ export async function getReportTemplates(req, res, next) {
 export async function getNirfReport(req, res, next) {
   try {
     const { batchYear } = req.query;
-    const targetYear = parseInt(batchYear, 10) || 2025;
+    const targetYear = parseInt(batchYear, 10) || 2027;
 
-    // Build 3-year historical NIRF Table 2 dataset
-    const nirfTable = [
-      {
-        academicYear: `${targetYear - 1}-${String(targetYear).slice(2)}`,
-        intakeCohort: 600,
-        admittedFirstYear: 580,
-        graduatedInMinTime: 542,
-        placedCount: 468,
-        medianSalaryInr: 850000,
-        medianSalaryLpa: '₹8.50 LPA',
-        higherStudiesCount: 42,
-        placementRate: '86.3%',
-      },
-      {
-        academicYear: `${targetYear - 2}-${String(targetYear - 1).slice(2)}`,
-        intakeCohort: 600,
-        admittedFirstYear: 572,
-        graduatedInMinTime: 530,
-        placedCount: 440,
-        medianSalaryInr: 780000,
-        medianSalaryLpa: '₹7.80 LPA',
-        higherStudiesCount: 38,
-        placementRate: '83.0%',
-      },
-      {
-        academicYear: `${targetYear - 3}-${String(targetYear - 2).slice(2)}`,
-        intakeCohort: 540,
-        admittedFirstYear: 520,
-        graduatedInMinTime: 495,
-        placedCount: 398,
-        medianSalaryInr: 700000,
-        medianSalaryLpa: '₹7.00 LPA',
-        higherStudiesCount: 35,
-        placementRate: '80.4%',
-      },
-    ];
+    const years = [targetYear, targetYear - 1, targetYear - 2];
+    const nirfTable = await Promise.all(
+      years.map(async (yr) => {
+        const admittedCount = await prisma.student.count({ where: { batchYear: yr } });
+        const placedStudents = await prisma.student.findMany({
+          where: { batchYear: yr, placementStatus: true },
+          include: {
+            applications: {
+              where: { status: 'SELECTED' },
+              include: { selectionResult: true, drive: true }
+            }
+          }
+        });
+
+        const placedCount = placedStudents.length;
+        const packages = [];
+        placedStudents.forEach(s => {
+          s.applications.forEach(a => {
+            const pkg = a.selectionResult?.offeredPackage 
+              ? parseFloat(a.selectionResult.offeredPackage) 
+              : (a.drive?.packageCtc ? parseFloat(a.drive.packageCtc) : 0);
+            if (pkg > 0) packages.push(pkg);
+          });
+        });
+
+        packages.sort((a, b) => a - b);
+        let medianLpa = 0;
+        if (packages.length > 0) {
+          const mid = Math.floor(packages.length / 2);
+          medianLpa = packages.length % 2 !== 0 
+            ? packages[mid] 
+            : Number(((packages[mid - 1] + packages[mid]) / 2).toFixed(2));
+        }
+
+        const medianSalaryInr = Math.round(medianLpa * 100000);
+        const rate = admittedCount > 0 ? ((placedCount / admittedCount) * 100).toFixed(1) + '%' : '0.0%';
+
+        return {
+          academicYear: `${yr - 1}-${String(yr).slice(2)}`,
+          intakeCohort: admittedCount,
+          admittedFirstYear: admittedCount,
+          graduatedInMinTime: admittedCount,
+          placedCount,
+          medianSalaryInr,
+          medianSalaryLpa: medianLpa > 0 ? `₹${medianLpa.toFixed(2)} LPA` : '₹0.00 LPA',
+          higherStudiesCount: 0,
+          placementRate: rate,
+        };
+      })
+    );
 
     return sendSuccess(res, 200, 'NIRF Table 2 report generated', {
       reportType: 'NIRF_TABLE_2',
@@ -200,9 +165,15 @@ export async function getNaacReport(req, res, next) {
       if (!isNaN(yr)) studentWhere.batchYear = yr;
     }
 
-    // Fetch students with selected applications
+    // Fetch students who are marked placed or have selected applications
     const students = await prisma.student.findMany({
-      where: studentWhere,
+      where: {
+        ...studentWhere,
+        OR: [
+          { placementStatus: true },
+          { applications: { some: { status: 'SELECTED' } } }
+        ]
+      },
       select: {
         id: true,
         rollNumber: true,
@@ -211,9 +182,15 @@ export async function getNaacReport(req, res, next) {
         department: true,
         batchYear: true,
         phone: true,
+        placementStatus: true,
         user: { select: { email: true } },
         applications: {
-          where: { status: 'SELECTED' },
+          where: {
+            OR: [
+              { status: 'SELECTED' },
+              { selectionResult: { isNot: null } }
+            ]
+          },
           select: {
             id: true,
             appliedAt: true,
@@ -241,18 +218,36 @@ export async function getNaacReport(req, res, next) {
     let serial = 1;
 
     students.forEach(student => {
-      student.applications.forEach(app => {
-        const company = app.selectionResult?.companyName || app.drive?.companyName || 'Corporate Partner';
-        const pkg = app.selectionResult?.offeredPackage 
-          ? parseFloat(app.selectionResult.offeredPackage) 
-          : (app.drive?.packageCtc ? parseFloat(app.drive.packageCtc) : 8.5);
-        
-        const offerDate = app.selectionResult?.offerDate 
-          ? new Date(app.selectionResult.offerDate).toLocaleDateString('en-IN')
-          : new Date(app.appliedAt).toLocaleDateString('en-IN');
+      if (student.applications.length > 0) {
+        student.applications.forEach(app => {
+          const company = app.selectionResult?.companyName || app.drive?.companyName || 'Corporate Partner';
+          const pkg = app.selectionResult?.offeredPackage 
+            ? parseFloat(app.selectionResult.offeredPackage) 
+            : (app.drive?.packageCtc ? parseFloat(app.drive.packageCtc) : 0);
+          
+          const offerDate = app.selectionResult?.offerDate 
+            ? new Date(app.selectionResult.offerDate).toLocaleDateString('en-IN')
+            : new Date(app.appliedAt).toLocaleDateString('en-IN');
 
+          const refNo = `OFF/${student.batchYear}/${student.department}/${String(serial).padStart(4, '0')}`;
+
+          rows.push({
+            serialNo: serial++,
+            batchYear: student.batchYear,
+            rollNumber: student.rollNumber,
+            studentName: `${student.firstName} ${student.lastName}`,
+            department: student.department,
+            studentEmail: student.user?.email || `${student.rollNumber.toLowerCase()}@college.edu`,
+            studentPhone: student.phone || 'N/A',
+            employerName: company,
+            designation: app.drive?.jobRole || 'Associate Engineer',
+            packageLpa: pkg,
+            appointmentRefNo: refNo,
+            offerDate,
+          });
+        });
+      } else if (student.placementStatus) {
         const refNo = `OFF/${student.batchYear}/${student.department}/${String(serial).padStart(4, '0')}`;
-
         rows.push({
           serialNo: serial++,
           batchYear: student.batchYear,
@@ -260,52 +255,15 @@ export async function getNaacReport(req, res, next) {
           studentName: `${student.firstName} ${student.lastName}`,
           department: student.department,
           studentEmail: student.user?.email || `${student.rollNumber.toLowerCase()}@college.edu`,
-          studentPhone: student.phone || '+91 98765 43210',
-          employerName: company,
-          designation: app.drive?.jobRole || 'Associate Engineer',
-          packageLpa: pkg,
+          studentPhone: student.phone || 'N/A',
+          employerName: 'Campus Partner',
+          designation: 'Associate Engineer',
+          packageLpa: 0,
           appointmentRefNo: refNo,
-          offerDate,
+          offerDate: new Date().toLocaleDateString('en-IN'),
         });
-      });
+      }
     });
-
-    // If DB is sparse, populate representative NAAC records
-    if (rows.length < 5) {
-      const sampleCompanies = [
-        { name: 'Amazon Development Centre', role: 'SDE-I', pkg: 44.5, dept: 'CSE' },
-        { name: 'Microsoft India (R&D)', role: 'Software Engineer', pkg: 38.0, dept: 'IT' },
-        { name: 'Google India', role: 'Software Engineer', pkg: 32.0, dept: 'AI & DS' },
-        { name: 'Atlassian India', role: 'Product Engineer', pkg: 24.5, dept: 'CSE' },
-        { name: 'Cisco Systems India', role: 'Network Engineer', pkg: 20.0, dept: 'ECE' },
-        { name: 'Oracle India Ltd', role: 'Cloud Engineer', pkg: 18.0, dept: 'IT' },
-        { name: 'Goldman Sachs Services', role: 'Technology Analyst', pkg: 16.5, dept: 'CSE' },
-        { name: 'Deloitte Consulting USI', role: 'Strategy Analyst', pkg: 14.0, dept: 'MECH' },
-        { name: 'JPMorgan Chase & Co', role: 'Software Associate', pkg: 12.5, dept: 'AI & DS' },
-        { name: 'Tata Consultancy Services (Digital)', role: 'Digital Developer', pkg: 9.0, dept: 'CIVIL' },
-        { name: 'Larsen & Toubro Ltd', role: 'Graduate Engineer Trainee', pkg: 8.5, dept: 'MECH' },
-        { name: 'Cognizant Technology Solutions', role: 'Programmer Analyst', pkg: 7.5, dept: 'ECE' },
-        { name: 'Accenture Solutions', role: 'Associate Software Engineer', pkg: 6.5, dept: 'EE' },
-      ];
-
-      sampleCompanies.forEach((sc, idx) => {
-        const curSerial = rows.length + 1;
-        rows.push({
-          serialNo: curSerial,
-          batchYear: 2026,
-          rollNumber: `22${sc.dept}0${idx + 10}`,
-          studentName: `Candidate ${idx + 1}`,
-          department: sc.dept,
-          studentEmail: `candidate${idx + 1}@college.edu`,
-          studentPhone: `+91 98765 000${idx + 10}`,
-          employerName: sc.name,
-          designation: sc.role,
-          packageLpa: sc.pkg,
-          appointmentRefNo: `OFF/2026/${sc.dept}/${String(curSerial).padStart(4, '0')}`,
-          offerDate: '15/04/2026',
-        });
-      });
-    }
 
     return sendSuccess(res, 200, 'NAAC Criteria 5.2 Placed Students Ledger retrieved', {
       reportType: 'NAAC_CRITERIA_5_2_1',

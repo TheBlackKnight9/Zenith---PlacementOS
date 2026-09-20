@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   UserCircle,
   ShieldCheck,
@@ -23,6 +24,9 @@ import {
   Copy,
   Check,
   AlertCircle,
+  Briefcase,
+  Clock,
+  ArrowRight,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -30,6 +34,19 @@ import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { TypographyH3, TypographyMuted } from "@/components/ui/typography";
 import { Badge } from "@/components/ui/badge";
+
+export interface PlacementStageInfo {
+  statusType: "SUCCESS" | "PROCESSING" | "NOT_APPLIED";
+  statusLabel: "Success" | "Processing" | "Not Applied";
+  companyName: string | null;
+  jobRole: string | null;
+  stepName: string | null;
+  detailText: string;
+  packageCtc: number | null;
+  offerDate?: string | null;
+  totalApplications: number;
+  activeApplications: number;
+}
 
 interface SkillItem {
   id: string;
@@ -55,6 +72,7 @@ interface StudentProfile {
   activeBacklogs: number;
   totalBacklogs: number;
   placementStatus: boolean;
+  placementStage?: PlacementStageInfo;
   bio: string | null;
   githubUrl: string | null;
   linkedinUrl: string | null;
@@ -226,6 +244,125 @@ export default function StudentProfilePage() {
         </div>
       )}
 
+      {/* ─── 0. Live Placement & Recruitment Status Hero Card (Synchronized with TPO) ─── */}
+      {(() => {
+        const stage = profile?.placementStage;
+        const statusType =
+          stage?.statusType ||
+          (profile?.placementStatus ? "SUCCESS" : "NOT_APPLIED");
+
+        if (statusType === "SUCCESS") {
+          return (
+            <Card className="border-emerald-500/40 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-background shadow-xs overflow-hidden">
+              <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="h-12 w-12 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-xs">
+                    <Award className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-xs font-semibold gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Offer Confirmed
+                      </Badge>
+                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                        Placement Status: Success
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-foreground mt-1">
+                      {stage?.companyName || "Placed at Partner Employer"}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {stage?.jobRole || "Confirmed Graduate Role"}
+                      {stage?.packageCtc ? ` • CTC: ₹${stage.packageCtc} LPA` : ""}
+                      {stage?.offerDate ? ` • Offered on ${new Date(stage.offerDate).toLocaleDateString()}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex sm:flex-col items-end gap-1.5 shrink-0 self-end sm:self-center">
+                  <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 font-medium text-xs">
+                    TPO Registry Verified
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">Placement Cell Confirmed</span>
+                </div>
+              </div>
+            </Card>
+          );
+        }
+
+        if (statusType === "PROCESSING") {
+          return (
+            <Card className="border-blue-500/40 bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-background shadow-xs overflow-hidden">
+              <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3.5">
+                  <div className="h-12 w-12 rounded-xl bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 shadow-xs">
+                    <Clock className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-blue-600 text-white hover:bg-blue-600 text-xs font-semibold gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        In Pipeline
+                      </Badge>
+                      <span className="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
+                        Recruitment Status: Processing
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-foreground mt-1">
+                      {stage?.stepName || "Active Round"} • {stage?.companyName || "Recruiter Drive"}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {stage?.jobRole || "Role Assessment"}
+                      {stage?.activeApplications ? ` • ${stage.activeApplications} active application(s)` : ""}
+                    </p>
+                  </div>
+                </div>
+                <Link href="/student/applications">
+                  <Button size="sm" variant="outline" className="text-xs border-blue-500/40 hover:bg-blue-500/10 text-blue-700 dark:text-blue-300 gap-1.5">
+                    View Pipeline
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          );
+        }
+
+        return (
+          <Card className="border-border bg-card shadow-xs overflow-hidden">
+            <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="h-12 w-12 rounded-xl bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+                  <Briefcase className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-muted-foreground text-xs font-semibold">
+                      0 Applications
+                    </Badge>
+                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Recruitment Status: Not Applied
+                    </span>
+                  </div>
+                  <h2 className="text-base font-bold text-foreground mt-1">
+                    You haven&apos;t applied to any recruitment drives yet
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Explore eligible placement drives and internship openings curated for your branch.
+                  </p>
+                </div>
+              </div>
+              <Link href="/student/dashboard">
+                <Button size="sm" className="text-xs gap-1.5 shrink-0">
+                  Browse Drives
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        );
+      })()}
+
       {/* 1. Verified Academic Credentials (Read-Only) */}
       <Card className="border-border shadow-xs">
         <CardHeader className="pb-2 border-b border-border bg-muted/30 rounded-t-xl">
@@ -276,7 +413,21 @@ export default function StudentProfilePage() {
           <div className="mt-4 pt-3 border-t border-border flex flex-wrap items-center justify-between text-xs text-muted-foreground">
             <span>10th Grade: <strong>{profile?.tenthPercentage ? `${profile.tenthPercentage}%` : "92.4%"}</strong></span>
             <span>12th Grade / Diploma: <strong>{profile?.twelfthPercentage ? `${profile.twelfthPercentage}%` : "89.6%"}</strong></span>
-            <span>Placement Status: <strong className={profile?.placementStatus ? "text-emerald-600" : "text-amber-600"}>{profile?.placementStatus ? "Placed" : "In Progress"}</strong></span>
+            <span>
+              Recruitment Status:{" "}
+              <strong
+                className={
+                  profile?.placementStage?.statusType === "SUCCESS" || profile?.placementStatus
+                    ? "text-emerald-600"
+                    : profile?.placementStage?.statusType === "PROCESSING"
+                    ? "text-blue-600"
+                    : "text-muted-foreground"
+                }
+              >
+                {profile?.placementStage?.statusLabel || (profile?.placementStatus ? "Success (Placed)" : "Not Applied")}
+                {profile?.placementStage?.detailText ? ` • ${profile.placementStage.detailText}` : ""}
+              </strong>
+            </span>
           </div>
         </CardContent>
       </Card>

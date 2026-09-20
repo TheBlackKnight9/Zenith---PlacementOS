@@ -147,8 +147,8 @@ export default function TpoDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <KpiCard
           label="Total Students"
-          value={s?.totalStudents ?? 1248}
-          growth={s?.growthThisMonth?.students ?? 12}
+          value={s?.totalStudents ?? 0}
+          growth={s?.growthThisMonth?.students ?? 0}
           iconBg="bg-orange-50"
           iconColor="text-orange-600"
           icon={<Users className="h-5 w-5" />}
@@ -157,8 +157,8 @@ export default function TpoDashboardPage() {
         />
         <KpiCard
           label="Applications"
-          value={s?.totalApplications ?? 620}
-          growth={s?.growthThisMonth?.applications ?? 48}
+          value={s?.totalApplications ?? 0}
+          growth={s?.growthThisMonth?.applications ?? 0}
           iconBg="bg-emerald-50"
           iconColor="text-emerald-600"
           icon={<FileCheck2 className="h-5 w-5" />}
@@ -167,8 +167,8 @@ export default function TpoDashboardPage() {
         />
         <KpiCard
           label="Selected"
-          value={s?.selectedStudents ?? 102}
-          growth={s?.growthThisMonth?.selected ?? 9}
+          value={s?.selectedStudents ?? 0}
+          growth={s?.growthThisMonth?.selected ?? 0}
           iconBg="bg-orange-50"
           iconColor="text-orange-500"
           icon={<Award className="h-5 w-5" />}
@@ -177,8 +177,8 @@ export default function TpoDashboardPage() {
         />
         <KpiCard
           label="Placement Rate"
-          value={`${s?.placementRate ?? 23.7}%`}
-          growth={s?.growthThisMonth?.placementRate ?? 3.2}
+          value={`${s?.placementRate ?? 0}%`}
+          growth={s?.growthThisMonth?.placementRate ?? 0}
           growthSuffix="%"
           iconBg="bg-sky-50"
           iconColor="text-sky-600"
@@ -208,7 +208,7 @@ export default function TpoDashboardPage() {
               </button>
             </CardHeader>
             <CardContent className="pt-1 pb-3 px-4">
-              <PlacementFunnelChart funnel={s?.placementFunnel} totalStudents={s?.totalStudents ?? 1248} />
+              <PlacementFunnelChart funnel={s?.placementFunnel} totalStudents={s?.totalStudents ?? 0} />
             </CardContent>
           </Card>
 
@@ -399,13 +399,13 @@ function PlacementFunnelChart({
   funnel?: PlacementFunnel;
   totalStudents: number;
 }) {
-  const base = funnel?.eligible || totalStudents || 1048;
+  const base = funnel?.eligible || totalStudents || 0;
 
   return (
     <div className="flex items-center justify-between gap-1 py-3 overflow-x-auto">
       {funnelStages.map((stage, i) => {
         const count = funnel ? funnel[stage.key as keyof PlacementFunnel] ?? 0 : 0;
-        const pct = ((count / base) * 100).toFixed(1);
+        const pct = base > 0 ? ((count / base) * 100).toFixed(1) : "0.0";
         const Icon = stage.icon;
 
         return (
@@ -441,6 +441,27 @@ function PlacementFunnelChart({
 function CompanyLogo({ name }: { name: string }) {
   const n = name.toLowerCase();
 
+  if (n.includes("microsoft")) {
+    return (
+      <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-xs">
+        <span className="text-sky-600 font-black text-xs tracking-tighter">MSFT</span>
+      </div>
+    );
+  }
+  if (n.includes("amazon")) {
+    return (
+      <div className="h-10 w-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shadow-xs">
+        <span className="text-amber-700 font-extrabold text-xs">aws</span>
+      </div>
+    );
+  }
+  if (n.includes("josh")) {
+    return (
+      <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shadow-xs">
+        <span className="text-indigo-700 font-bold text-xs">JTG</span>
+      </div>
+    );
+  }
   if (n.includes("tcs")) {
     return (
       <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-xs">
@@ -487,24 +508,31 @@ function CompanyLogo({ name }: { name: string }) {
 }
 
 function UpcomingDrivesList({ drives }: { drives: UpcomingDrive[] }) {
-  const displayDrives = drives.length > 0 ? drives.slice(0, 5) : [
-    { id: "1", companyName: "TCS Ninja", jobRole: "Aptitude Test", driveType: "Aptitude Test", driveDate: "2025-05-22T10:00:00.000Z", companyLogo: null },
-    { id: "2", companyName: "Infosys Springboard", jobRole: "Online Test", driveType: "Online Test", driveDate: "2025-05-24T11:00:00.000Z", companyLogo: null },
-    { id: "3", companyName: "Wipro Elite", jobRole: "Aptitude Test", driveType: "Aptitude Test", driveDate: "2025-05-26T09:30:00.000Z", companyLogo: null },
-    { id: "4", companyName: "Capgemini Hiring", jobRole: "Technical Test", driveType: "Technical Test", driveDate: "2025-05-28T14:00:00.000Z", companyLogo: null },
-    { id: "5", companyName: "Deloitte Off Campus", jobRole: "Aptitude Test", driveType: "Aptitude Test", driveDate: "2025-05-30T10:30:00.000Z", companyLogo: null },
-  ];
+  if (!drives || drives.length === 0) {
+    return (
+      <div className="py-8 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+        <Building2 className="h-8 w-8 text-muted-foreground/40 stroke-1" />
+        <span>No upcoming drives scheduled yet</span>
+        <Link
+          href="/tpo/placement-drives"
+          className="text-primary font-semibold hover:underline mt-1"
+        >
+          Create New Drive
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3.5">
-      {displayDrives.map((drive) => {
+      {drives.slice(0, 5).map((drive) => {
         const dt = drive.driveDate ? new Date(drive.driveDate) : null;
         const dateLabel = dt
           ? dt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-          : "22 May 2025";
+          : "TBD";
         const timeLabel = dt
           ? dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
-          : "10:00 AM";
+          : "All Day";
 
         return (
           <div
@@ -517,7 +545,7 @@ function UpcomingDrivesList({ drives }: { drives: UpcomingDrive[] }) {
                 {drive.companyName}
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
-                {drive.driveType || drive.jobRole || "Aptitude Test"}
+                {drive.driveType || drive.jobRole || "Campus Drive"}
               </div>
             </div>
             <div className="text-right shrink-0">
@@ -552,8 +580,8 @@ const donutColors = {
 };
 
 function DriveStatusDonut({ breakdown }: { breakdown?: DriveStatusBreakdown }) {
-  const b = breakdown && breakdown.total > 0 ? breakdown : { active: 7, upcoming: 4, completed: 2, draft: 1, total: 14 };
-  const total = b.total || 14;
+  const b = breakdown ?? { active: 0, upcoming: 0, completed: 0, draft: 0, total: 0 };
+  const total = b.total;
   const radius = 56;
   const circumference = 2 * Math.PI * radius;
 
@@ -571,27 +599,38 @@ function DriveStatusDonut({ breakdown }: { breakdown?: DriveStatusBreakdown }) {
       {/* Donut SVG */}
       <div className="relative w-[130px] h-[130px] shrink-0">
         <svg viewBox="0 0 140 140" className="w-full h-full -rotate-90">
-          {segments.map((seg) => {
-            const pct = seg.count / total;
-            const dashLen = pct * circumference;
-            const dashGap = circumference - dashLen;
-            const currentOffset = offset;
-            offset += dashLen;
-            return (
-              <circle
-                key={seg.key}
-                cx="70"
-                cy="70"
-                r={radius}
-                fill="none"
-                stroke={seg.color}
-                strokeWidth="16"
-                strokeDasharray={`${dashLen} ${dashGap}`}
-                strokeDashoffset={-currentOffset}
-                strokeLinecap="round"
-              />
-            );
-          })}
+          {total === 0 ? (
+            <circle
+              cx="70"
+              cy="70"
+              r={radius}
+              fill="none"
+              stroke="#e2e8f0"
+              strokeWidth="16"
+            />
+          ) : (
+            segments.map((seg) => {
+              const pct = total > 0 ? seg.count / total : 0;
+              const dashLen = pct * circumference;
+              const dashGap = circumference - dashLen;
+              const currentOffset = offset;
+              offset += dashLen;
+              return (
+                <circle
+                  key={seg.key}
+                  cx="70"
+                  cy="70"
+                  r={radius}
+                  fill="none"
+                  stroke={seg.color}
+                  strokeWidth="16"
+                  strokeDasharray={`${dashLen} ${dashGap}`}
+                  strokeDashoffset={-currentOffset}
+                  strokeLinecap="round"
+                />
+              );
+            })
+          )}
         </svg>
         {/* Center count */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -609,7 +648,7 @@ function DriveStatusDonut({ breakdown }: { breakdown?: DriveStatusBreakdown }) {
               <span className="text-slate-600 font-medium">{seg.label}</span>
             </div>
             <span className="font-semibold text-slate-800">
-              {seg.count} ({((seg.count / total) * 100).toFixed(1)}%)
+              {seg.count} ({total > 0 ? ((seg.count / total) * 100).toFixed(1) : "0.0"}%)
             </span>
           </div>
         ))}
@@ -623,14 +662,13 @@ function DriveStatusDonut({ breakdown }: { breakdown?: DriveStatusBreakdown }) {
    ═════════════════════════════════════════════════════════════ */
 
 function DepartmentOverviewTable({ departments }: { departments: DepartmentRow[] }) {
-  const displayDepartments = departments.length > 0 ? departments : [
-    { department: "CSE", students: 420, applied: 226, selected: 42, placementRate: 22.4 },
-    { department: "IT", students: 180, applied: 112, selected: 20, placementRate: 22.2 },
-    { department: "ECE", students: 160, applied: 92, selected: 15, placementRate: 16.3 },
-    { department: "Mechanical", students: 150, applied: 68, selected: 10, placementRate: 14.7 },
-    { department: "AI & DS", students: 120, applied: 62, selected: 8, placementRate: 12.9 },
-    { department: "Others", students: 218, applied: 60, selected: 7, placementRate: 11.5 },
-  ];
+  if (!departments || departments.length === 0) {
+    return (
+      <div className="py-8 text-center text-xs text-muted-foreground">
+        No department placement data available yet
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -645,7 +683,7 @@ function DepartmentOverviewTable({ departments }: { departments: DepartmentRow[]
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
-          {displayDepartments.map((d) => (
+          {departments.map((d) => (
             <tr key={d.department} className="hover:bg-slate-50/50 transition-colors">
               <td className="py-2.5 font-bold text-slate-800">{d.department}</td>
               <td className="py-2.5 text-right text-slate-600">{d.students}</td>
@@ -684,17 +722,18 @@ const notifIcons: Record<string, { icon: typeof BellIcon; bg: string; text: stri
 };
 
 function NotificationsPanel({ notifications }: { notifications: NotificationItem[] }) {
-  const displayNotifications = notifications.length > 0 ? notifications.slice(0, 5) : [
-    { id: "1", title: "New drive TCS Ninja is scheduled", message: "Aptitude test on 22 May 2025", type: "DRIVE", createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(), isRead: false },
-    { id: "2", title: "Results updated for Infosys Springboard", message: "10 students shortlisted", type: "RESULT", createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), isRead: true },
-    { id: "3", title: "Interview scheduled for 16 students", message: "On 24 May 2025", type: "INTERVIEW", createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), isRead: true },
-    { id: "4", title: "Capgemini Hiring registrations open", message: "Last date to apply 27 May 2025", type: "DEADLINE", createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), isRead: true },
-    { id: "5", title: "78 students not yet applied", message: "Reminder: Deloitte Off Campus", type: "WARNING", createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), isRead: true },
-  ];
+  if (!notifications || notifications.length === 0) {
+    return (
+      <div className="py-8 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+        <BellIcon className="h-8 w-8 text-muted-foreground/40 stroke-1" />
+        <span>No new notifications</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3.5">
-      {displayNotifications.map((n) => {
+      {notifications.slice(0, 5).map((n) => {
         const cfg = notifIcons[n.type] || notifIcons.SYSTEM;
         const Icon = cfg.icon;
         const timeAgo = formatTimeAgo(n.createdAt);
@@ -751,10 +790,10 @@ function formatTimeAgo(dateStr: string): string {
 
 function PendingActionsBar({ actions }: { actions?: PendingActions }) {
   const a = actions ?? {
-    interviewFeedbackPending: 12,
-    applicationsToReview: 28,
-    upcomingInterviewsThisWeek: 5,
-    reportsToGenerate: 3,
+    interviewFeedbackPending: 0,
+    applicationsToReview: 0,
+    upcomingInterviewsThisWeek: 0,
+    reportsToGenerate: 0,
   };
 
   const items = [

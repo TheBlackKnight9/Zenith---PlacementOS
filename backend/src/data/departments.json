@@ -8,13 +8,6 @@
       "badgeColor": "orange"
     },
     {
-      "code": "IT",
-      "name": "Information Technology",
-      "icon": "Laptop",
-      "color": "#06b6d4",
-      "badgeColor": "blue"
-    },
-    {
       "code": "AI & DS",
       "name": "Artificial Intelligence & Data Science",
       "icon": "BrainCircuit",
@@ -59,15 +52,6 @@
       "office": "Tech Block A, Room 402",
       "intakeCapacity": 240,
       "targetPlacementRate": 90
-    },
-    "IT": {
-      "fullName": "Dr. Meera Nambiar",
-      "designation": "Associate Professor & TPO Coordinator",
-      "email": "meera.nambiar@college.edu",
-      "phone": "+91 98765 00202",
-      "office": "Tech Block B, Room 210",
-      "intakeCapacity": 180,
-      "targetPlacementRate": 85
     },
     "ECE": {
       "fullName": "Prof. Rajesh Kumar Verma",
@@ -115,5 +99,5 @@
       "targetPlacementRate": 82
     }
   },
-  "updatedAt": "2026-09-18T12:50:55.001Z"
+  "updatedAt": "2026-09-19T10:39:11.881Z"
 }

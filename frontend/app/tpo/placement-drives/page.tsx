@@ -27,7 +27,8 @@ import {
   ListChecks,
   CheckCircle2,
   Activity,
-  TrendingUp
+  TrendingUp,
+  X
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api-client";
@@ -273,14 +274,48 @@ export default function PlacementDrivesPage() {
     }
   }, [selectedDepartmentCode]);
 
+  const [driveSearch, setDriveSearch] = useState("");
+
   useEffect(() => {
     fetchDrives();
   }, [fetchDrives]);
 
+  // Synchronize drive search with URL parameters or tpo:search-drives event
+  useEffect(() => {
+    const handleDriveSearch = (e: any) => {
+      if (e.detail !== undefined) {
+        setDriveSearch(e.detail);
+      }
+    };
+    window.addEventListener("tpo:search-drives", handleDriveSearch);
+
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const q = urlParams.get("search") || urlParams.get("q");
+      if (q) setDriveSearch(q);
+    }
+
+    return () => {
+      window.removeEventListener("tpo:search-drives", handleDriveSearch);
+    };
+  }, []);
+
   const filteredDrives = useMemo(() => {
-    if (!selectedDepartmentCode || selectedDepartmentCode === "ALL") return drives;
-    return drives.filter((d) => isDepartmentMatch(d.eligibleBranches));
-  }, [drives, selectedDepartmentCode, isDepartmentMatch]);
+    let list = drives;
+    if (selectedDepartmentCode && selectedDepartmentCode !== "ALL") {
+      list = list.filter((d) => isDepartmentMatch(d.eligibleBranches));
+    }
+    if (driveSearch.trim()) {
+      const q = driveSearch.toLowerCase().trim();
+      list = list.filter(
+        (d) =>
+          d.companyName.toLowerCase().includes(q) ||
+          d.jobRole.toLowerCase().includes(q) ||
+          d.location.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [drives, selectedDepartmentCode, isDepartmentMatch, driveSearch]);
 
   const openAddDialog = () => {
     setEditingDriveId(null);
@@ -636,6 +671,28 @@ export default function PlacementDrivesPage() {
             <span className="text-xs text-muted-foreground font-medium bg-muted/60 px-2.5 h-8 inline-flex items-center rounded-md border border-border/40 shrink-0">
               {filteredDrives.length} Drives Listed
             </span>
+
+            {driveSearch && (
+              <Badge variant="secondary" className="text-xs px-2.5 h-8 gap-1.5 bg-primary/10 text-primary border-primary/20 shrink-0 font-medium">
+                <span>Filter: &ldquo;{driveSearch}&rdquo;</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDriveSearch("");
+                    if (typeof window !== "undefined") {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete("search");
+                      url.searchParams.delete("q");
+                      window.history.replaceState({}, "", url.toString());
+                    }
+                  }}
+                  className="hover:text-foreground cursor-pointer"
+                  title="Clear drive filter"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
 
             <Button
               variant="outline"

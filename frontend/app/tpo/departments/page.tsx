@@ -489,7 +489,7 @@ export default function DepartmentsPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Academic Branches
               </span>
-              <div className="h-8.5 w-8.5 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
                 <Building2 className="h-4 w-4" />
               </div>
             </div>
@@ -515,7 +515,7 @@ export default function DepartmentsPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Campus Placement %
               </span>
-              <div className="h-8.5 w-8.5 rounded-lg bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-lg bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
                 <TrendingUp className="h-4 w-4" />
               </div>
             </div>
@@ -545,7 +545,7 @@ export default function DepartmentsPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Leading Placement Rate
               </span>
-              <div className="h-8.5 w-8.5 rounded-lg bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-lg bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center">
                 <Award className="h-4 w-4" />
               </div>
             </div>
@@ -571,7 +571,7 @@ export default function DepartmentsPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Highest Average CTC
               </span>
-              <div className="h-8.5 w-8.5 rounded-lg bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-lg bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center">
                 <Sparkles className="h-4 w-4" />
               </div>
             </div>
@@ -709,7 +709,7 @@ export default function DepartmentsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 transition-colors"
+                              className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 transition-colors"
                               title="Branch options"
                             >
                               <MoreHorizontal className="h-4 w-4" />
@@ -753,7 +753,7 @@ export default function DepartmentsPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleOpenSheet(dept)}
-                          className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 transition-colors"
+                          className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 transition-colors"
                           title="View Detailed Analytics"
                         >
                           <ChevronRight className="h-4 w-4" />
@@ -852,7 +852,7 @@ export default function DepartmentsPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleOpenCoordinatorDialog(dept)}
-                          className="h-7.5 w-7.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          className="h-8 w-8 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
                           title="Edit Faculty Coordinator"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
@@ -1664,7 +1664,7 @@ export default function DepartmentsPage() {
                       value={newDeptForm.coordinatorFullName}
                       onChange={(e) => setNewDeptForm({ ...newDeptForm, coordinatorFullName: e.target.value })}
                       placeholder="e.g. Dr. Rajesh Verma"
-                      className="h-8.5 text-xs border-input bg-background"
+                      className="h-9 text-xs border-input bg-background"
                     />
                   </div>
 
@@ -1674,7 +1674,7 @@ export default function DepartmentsPage() {
                       value={newDeptForm.coordinatorDesignation}
                       onChange={(e) => setNewDeptForm({ ...newDeptForm, coordinatorDesignation: e.target.value })}
                       placeholder="e.g. Associate Professor & Lead"
-                      className="h-8.5 text-xs border-input bg-background"
+                      className="h-9 text-xs border-input bg-background"
                     />
                   </div>
 
@@ -1685,7 +1685,7 @@ export default function DepartmentsPage() {
                       value={newDeptForm.coordinatorEmail}
                       onChange={(e) => setNewDeptForm({ ...newDeptForm, coordinatorEmail: e.target.value })}
                       placeholder="coordinator@college.edu"
-                      className="h-8.5 text-xs border-input bg-background"
+                      className="h-9 text-xs border-input bg-background"
                     />
                   </div>
 
@@ -1696,7 +1696,7 @@ export default function DepartmentsPage() {
                       value={newDeptForm.coordinatorPhone}
                       onChange={(e) => setNewDeptForm({ ...newDeptForm, coordinatorPhone: e.target.value })}
                       placeholder="+91 98765 00000"
-                      className="h-8.5 text-xs border-input bg-background"
+                      className="h-9 text-xs border-input bg-background"
                     />
                   </div>
 
@@ -1706,7 +1706,7 @@ export default function DepartmentsPage() {
                       value={newDeptForm.coordinatorOffice}
                       onChange={(e) => setNewDeptForm({ ...newDeptForm, coordinatorOffice: e.target.value })}
                       placeholder="e.g. Engineering Wing, Room 302"
-                      className="h-8.5 text-xs border-input bg-background"
+                      className="h-9 text-xs border-input bg-background"
                     />
                   </div>
                 </div>

@@ -488,12 +488,42 @@ export async function updateApplicationStatus(req, res, next) {
       data: updateData
     });
 
-    // If candidate was SELECTED on a placement drive, automatically update student placementStatus
-    if (updated.status === 'SELECTED' && application.driveId) {
+    // If candidate was SELECTED on a placement drive, automatically update student placementStatus and selectionResult
+    if (updated.status === 'SELECTED') {
+      const company = application.drive?.companyName || 'Campus Partner';
+      const pkg = application.drive?.packageCtc ? Number(application.drive.packageCtc) : 10;
+      await prisma.selectionResult.upsert({
+        where: { applicationId: application.id },
+        update: {
+          companyName: company,
+          offeredPackage: pkg,
+          isAccepted: true,
+        },
+        create: {
+          applicationId: application.id,
+          companyName: company,
+          offeredPackage: pkg,
+          offerDate: new Date(),
+          isAccepted: true,
+        },
+      });
+
       await prisma.student.update({
         where: { id: application.studentId },
         data: { placementStatus: true }
       });
+    } else if (application.status === 'SELECTED' && updated.status !== 'SELECTED') {
+      // If reverted from SELECTED, remove selection result and check other offers
+      await prisma.selectionResult.delete({ where: { applicationId: application.id } }).catch(() => {});
+      const otherSelected = await prisma.application.findFirst({
+        where: { studentId: application.studentId, status: 'SELECTED', id: { not: application.id } }
+      });
+      if (!otherSelected) {
+        await prisma.student.update({
+          where: { id: application.studentId },
+          data: { placementStatus: false }
+        });
+      }
     }
 
     return sendSuccess(res, 200, 'Application status updated successfully', {

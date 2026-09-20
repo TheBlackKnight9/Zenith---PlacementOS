@@ -2,6 +2,7 @@ import prisma from '../config/db.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
+import { resolveStudentPlacementStatus } from '../utils/placementStatusHelper.js';
 
 /**
  * Get Authenticated Student Profile
@@ -19,6 +20,19 @@ export async function getProfile(req, res, next) {
         resumes: {
           select: { id: true, title: true, isDefault: true, templateName: true, createdAt: true }
         },
+        applications: {
+          include: {
+            drive: { select: { companyName: true, jobRole: true, packageCtc: true, selectionProcess: true } },
+            internship: { select: { companyName: true, roleTitle: true } },
+            interviews: {
+              select: { roundName: true, roundNumber: true, status: true, scheduledAt: true },
+              orderBy: { roundNumber: 'desc' },
+            },
+            selectionResult: {
+              select: { companyName: true, offeredPackage: true, offerDate: true, offerLetterUrl: true },
+            },
+          },
+        },
         _count: {
           select: { applications: true }
         }
@@ -28,6 +42,8 @@ export async function getProfile(req, res, next) {
     if (!student) {
       return sendError(res, 404, 'Student profile not found', { code: 'STUDENT_NOT_FOUND' });
     }
+
+    const placementStage = resolveStudentPlacementStatus(student);
 
     return sendSuccess(res, 200, 'Student profile fetched', {
       profile: {
@@ -47,6 +63,7 @@ export async function getProfile(req, res, next) {
         activeBacklogs: student.activeBacklogs,
         totalBacklogs: student.totalBacklogs,
         placementStatus: student.placementStatus,
+        placementStage,
         bio: student.bio,
         githubUrl: student.githubUrl,
         linkedinUrl: student.linkedinUrl,
@@ -58,6 +75,7 @@ export async function getProfile(req, res, next) {
           proficiency: s.proficiency
         })),
         resumes: student.resumes,
+        applications: student.applications || [],
         applicationsCount: student._count.applications
       }
     });
@@ -578,6 +596,7 @@ export async function getDashboardStats(req, res, next) {
       appliedCount: appliedCount || 6,
       upcomingInterviewsCount: upcomingInterviews.length || 2,
       placementStatus: student.placementStatus,
+      placementStage: resolveStudentPlacementStatus(student),
       growthThisMonth: {
         eligible: 3,
         applications: 2,

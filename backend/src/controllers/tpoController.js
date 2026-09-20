@@ -11,6 +11,7 @@ import {
   deleteDepartmentMetadata,
 } from '../utils/departmentHelper.js';
 import { generateRandomPassword, hashPassword } from '../utils/password.js';
+import { resolveStudentPlacementStatus } from '../utils/placementStatusHelper.js';
 
 /**
  * TPO Dashboard KPI Stats
@@ -37,6 +38,7 @@ export async function getDashboardStats(req, res, next) {
 
     const [
       totalStudents,
+      eligibleStudents,
       studentsBeforeMonth,
       totalApplications,
       appsBeforeMonth,
@@ -55,6 +57,7 @@ export async function getDashboardStats(req, res, next) {
       upcomingInterviewsThisWeek
     ] = await Promise.all([
       prisma.student.count({ where: studentFilter }),
+      prisma.student.count({ where: { ...studentFilter, activeBacklogs: 0 } }),
       prisma.student.count({ where: { ...studentFilter, createdAt: { lt: startOfMonth } } }),
       prisma.application.count({ where: appFilter }),
       prisma.application.count({ where: { ...appFilter, appliedAt: { lt: startOfMonth } } }),
@@ -68,7 +71,7 @@ export async function getDashboardStats(req, res, next) {
       prisma.student.groupBy({ by: ['department'], _count: { id: true } }),
       prisma.placementDrive.findMany({
         where: { status: { in: ['UPCOMING', 'ACTIVE'] } },
-        orderBy: { deadline: 'asc' },
+        orderBy: { driveDate: 'asc' },
         take: 5
       }),
       isUuid
@@ -90,19 +93,19 @@ export async function getDashboardStats(req, res, next) {
     const prevPlacementRate = prevTotalStudents > 0 ? Number(((prevSelectedStudents / prevTotalStudents) * 100).toFixed(1)) : 0;
 
     const growthThisMonth = {
-      students: totalStudents > 0 ? Math.max(1, totalStudents - prevTotalStudents) : 12,
-      applications: totalApplications > 0 ? Math.max(1, totalApplications - appsBeforeMonth) : 48,
-      selected: selectedStudents > 0 ? Math.max(0, selectedStudents - prevSelectedStudents) : 9,
-      placementRate: Number((placementRate - prevPlacementRate).toFixed(1)) || 3.2
+      students: totalStudents - prevTotalStudents,
+      applications: totalApplications - appsBeforeMonth,
+      selected: selectedStudents - prevSelectedStudents,
+      placementRate: Number((placementRate - prevPlacementRate).toFixed(1))
     };
 
     const placementFunnel = {
-      eligible: totalStudents || 1048,
-      applied: funnelApplied || 620,
-      shortlisted: funnelShortlisted || 286,
-      interview: funnelInterview || 164,
-      selected: selectedStudents || 102,
-      joined: funnelJoined || 78
+      eligible: eligibleStudents,
+      applied: funnelApplied,
+      shortlisted: funnelShortlisted,
+      interview: funnelInterview,
+      selected: selectedStudents,
+      joined: funnelJoined
     };
 
     const driveStatusBreakdown = {
@@ -122,15 +125,7 @@ export async function getDashboardStats(req, res, next) {
       else driveStatusBreakdown.draft += count;
     });
 
-    if (driveStatusBreakdown.total === 0) {
-      driveStatusBreakdown.active = 7;
-      driveStatusBreakdown.upcoming = 4;
-      driveStatusBreakdown.completed = 2;
-      driveStatusBreakdown.draft = 1;
-      driveStatusBreakdown.total = 14;
-    }
-
-    let departmentOverview = await Promise.all(
+    const departmentOverview = await Promise.all(
       departmentsInfo.map(async (dep) => {
         const deptApps = await prisma.application.count({ where: { student: { department: dep.department } } });
         const deptSelected = await prisma.application.count({ where: { student: { department: dep.department }, status: 'SELECTED' } });
@@ -144,67 +139,36 @@ export async function getDashboardStats(req, res, next) {
       })
     );
 
-    if (departmentOverview.length === 0) {
-      departmentOverview = [
-        { department: 'CSE', students: 420, applied: 226, selected: 42, placementRate: 22.4 },
-        { department: 'IT', students: 180, applied: 112, selected: 20, placementRate: 22.2 },
-        { department: 'ECE', students: 160, applied: 92, selected: 15, placementRate: 16.3 },
-        { department: 'Mechanical', students: 150, applied: 68, selected: 10, placementRate: 14.7 },
-        { department: 'AI & DS', students: 120, applied: 62, selected: 8, placementRate: 12.9 },
-        { department: 'Others', students: 218, applied: 60, selected: 7, placementRate: 11.5 }
-      ];
-    }
+    const upcomingDrives = upcomingDrivesRaw.map(d => ({
+      id: d.id,
+      companyName: d.companyName,
+      jobRole: d.jobRole,
+      driveType: d.driveType || d.jobRole || 'Campus Drive',
+      driveDate: d.driveDate || d.deadline,
+      companyLogo: d.companyLogo
+    }));
 
-    const fallbackUpcomingDrives = [
-      { id: 'ud1', companyName: 'TCS Ninja', jobRole: 'Aptitude Test', driveType: 'Aptitude Test', driveDate: '2025-05-22T10:00:00.000Z', companyLogo: null },
-      { id: 'ud2', companyName: 'Infosys Springboard', jobRole: 'Online Test', driveType: 'Online Test', driveDate: '2025-05-24T11:00:00.000Z', companyLogo: null },
-      { id: 'ud3', companyName: 'Wipro Elite', jobRole: 'Aptitude Test', driveType: 'Aptitude Test', driveDate: '2025-05-26T09:30:00.000Z', companyLogo: null },
-      { id: 'ud4', companyName: 'Capgemini Hiring', jobRole: 'Technical Test', driveType: 'Technical Test', driveDate: '2025-05-28T14:00:00.000Z', companyLogo: null },
-      { id: 'ud5', companyName: 'Deloitte Off Campus', jobRole: 'Aptitude Test', driveType: 'Aptitude Test', driveDate: '2025-05-30T10:30:00.000Z', companyLogo: null }
-    ];
-
-    const upcomingDrives = upcomingDrivesRaw.length > 0
-      ? upcomingDrivesRaw.map(d => ({
-          id: d.id,
-          companyName: d.companyName,
-          jobRole: d.jobRole,
-          driveType: d.jobRole || 'Aptitude Test',
-          driveDate: d.driveDate || d.deadline,
-          companyLogo: d.companyLogo
-        }))
-      : fallbackUpcomingDrives;
-
-    const fallbackNotifications = [
-      { id: 'n1', title: 'New drive TCS Ninja is scheduled', message: 'Aptitude test on 22 May 2025', type: 'DRIVE', createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(), isRead: false },
-      { id: 'n2', title: 'Results updated for Infosys Springboard', message: '10 students shortlisted', type: 'RESULT', createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), isRead: true },
-      { id: 'n3', title: 'Interview scheduled for 16 students', message: 'On 24 May 2025', type: 'INTERVIEW', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), isRead: true },
-      { id: 'n4', title: 'Capgemini Hiring registrations open', message: 'Last date to apply 27 May 2025', type: 'DEADLINE', createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), isRead: true },
-      { id: 'n5', title: '78 students not yet applied', message: 'Reminder: Deloitte Off Campus', type: 'WARNING', createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), isRead: true }
-    ];
-
-    const recentNotifications = recentNotificationsRaw.length > 0
-      ? recentNotificationsRaw.map(n => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          type: n.type,
-          createdAt: n.createdAt,
-          isRead: n.isRead
-        }))
-      : fallbackNotifications;
+    const recentNotifications = recentNotificationsRaw.map(n => ({
+      id: n.id,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      createdAt: n.createdAt,
+      isRead: n.isRead
+    }));
 
     const pendingActions = {
-      interviewFeedbackPending: interviewFeedbackPending || 12,
-      applicationsToReview: applicationsToReview || 28,
-      upcomingInterviewsThisWeek: upcomingInterviewsThisWeek || 5,
-      reportsToGenerate: 3
+      interviewFeedbackPending,
+      applicationsToReview,
+      upcomingInterviewsThisWeek,
+      reportsToGenerate: 0
     };
 
     return sendSuccess(res, 200, 'TPO dashboard statistics fetched', {
-      totalStudents: totalStudents || 1248,
-      totalApplications: totalApplications || 620,
-      selectedStudents: selectedStudents || 102,
-      placementRate: placementRate || 23.7,
+      totalStudents,
+      totalApplications,
+      selectedStudents,
+      placementRate,
       growthThisMonth,
       placementFunnel,
       driveStatusBreakdown,
@@ -231,6 +195,7 @@ export async function getStudents(req, res, next) {
       minCgpa,
       maxBacklogs,
       placed,
+      status, // 'SUCCESS' | 'PROCESSING' | 'NOT_APPLIED' | 'ALL'
       page = '1',
       limit = '20'
     } = req.query;
@@ -259,7 +224,19 @@ export async function getStudents(req, res, next) {
       where.activeBacklogs = { lte: parseInt(maxBacklogs, 10) };
     }
 
-    if (placed !== undefined && placed !== '') {
+    // 3-tier recruitment status filtering
+    if (status && status !== 'ALL') {
+      const statusUpper = status.toUpperCase();
+      if (statusUpper === 'SUCCESS' || statusUpper === 'PLACED') {
+        where.placementStatus = true;
+      } else if (statusUpper === 'NOT_APPLIED' || statusUpper === 'UNAPPLIED') {
+        where.placementStatus = false;
+        where.applications = { none: {} };
+      } else if (statusUpper === 'PROCESSING' || statusUpper === 'IN_PROGRESS') {
+        where.placementStatus = false;
+        where.applications = { some: {} };
+      }
+    } else if (placed !== undefined && placed !== '') {
       where.placementStatus = placed === 'true';
     }
 
@@ -268,7 +245,8 @@ export async function getStudents(req, res, next) {
       where.OR = [
         { rollNumber: { contains: searchTrimmed, mode: 'insensitive' } },
         { firstName: { contains: searchTrimmed, mode: 'insensitive' } },
-        { lastName: { contains: searchTrimmed, mode: 'insensitive' } }
+        { lastName: { contains: searchTrimmed, mode: 'insensitive' } },
+        { user: { email: { contains: searchTrimmed, mode: 'insensitive' } } }
       ];
     }
 
@@ -287,6 +265,19 @@ export async function getStudents(req, res, next) {
           skills: {
             include: { skill: true }
           },
+          applications: {
+            include: {
+              drive: { select: { companyName: true, jobRole: true, packageCtc: true, selectionProcess: true } },
+              internship: { select: { companyName: true, roleTitle: true } },
+              interviews: {
+                select: { roundName: true, roundNumber: true, status: true, scheduledAt: true },
+                orderBy: { roundNumber: 'desc' }
+              },
+              selectionResult: {
+                select: { companyName: true, offeredPackage: true, offerDate: true }
+              }
+            }
+          },
           _count: {
             select: { applications: true }
           }
@@ -299,24 +290,28 @@ export async function getStudents(req, res, next) {
       page: pageNum,
       limit: pageSize,
       totalPages: Math.ceil(total / pageSize),
-      students: students.map(s => ({
-        id: s.id,
-        rollNumber: s.rollNumber,
-        name: `${s.firstName} ${s.lastName}`,
-        email: s.user.email,
-        plainPassword: s.user?.plainPassword || '',
-        phone: s.phone,
-        department: s.department,
-        batchYear: s.batchYear,
-        cgpa: parseFloat(s.cgpa),
-        tenthPercentage: s.tenthPercentage ? parseFloat(s.tenthPercentage) : null,
-        twelfthPercentage: s.twelfthPercentage ? parseFloat(s.twelfthPercentage) : null,
-        activeBacklogs: s.activeBacklogs,
-        totalBacklogs: s.totalBacklogs,
-        placementStatus: s.placementStatus,
-        skills: s.skills.map(sk => sk.skill.name),
-        applicationsCount: s._count.applications
-      }))
+      students: students.map(s => {
+        const placementStage = resolveStudentPlacementStatus(s);
+        return {
+          id: s.id,
+          rollNumber: s.rollNumber,
+          name: `${s.firstName} ${s.lastName}`,
+          email: s.user.email,
+          plainPassword: s.user?.plainPassword || '',
+          phone: s.phone,
+          department: s.department,
+          batchYear: s.batchYear,
+          cgpa: parseFloat(s.cgpa),
+          tenthPercentage: s.tenthPercentage ? parseFloat(s.tenthPercentage) : null,
+          twelfthPercentage: s.twelfthPercentage ? parseFloat(s.twelfthPercentage) : null,
+          activeBacklogs: s.activeBacklogs,
+          totalBacklogs: s.totalBacklogs,
+          placementStatus: s.placementStatus,
+          placementStage,
+          skills: s.skills.map(sk => sk.skill.name),
+          applicationsCount: s._count.applications
+        };
+      })
     });
   } catch (error) {
     next(error);
@@ -339,9 +334,15 @@ export async function getStudentById(req, res, next) {
         resumes: { select: { id: true, title: true, isDefault: true, createdAt: true } },
         applications: {
           include: {
-            drive: { select: { companyName: true, jobRole: true, packageCtc: true } },
+            drive: { select: { companyName: true, jobRole: true, packageCtc: true, selectionProcess: true } },
             internship: { select: { companyName: true, roleTitle: true } },
-            interviews: true
+            interviews: {
+              select: { roundName: true, roundNumber: true, status: true, scheduledAt: true },
+              orderBy: { roundNumber: 'desc' }
+            },
+            selectionResult: {
+              select: { companyName: true, offeredPackage: true, offerDate: true, offerLetterUrl: true }
+            }
           }
         }
       }
@@ -350,6 +351,8 @@ export async function getStudentById(req, res, next) {
     if (!student) {
       return sendError(res, 404, 'Student record not found', { code: 'STUDENT_NOT_FOUND' });
     }
+
+    const placementStage = resolveStudentPlacementStatus(student);
 
     const formattedStudent = {
       id: student.id,
@@ -368,6 +371,7 @@ export async function getStudentById(req, res, next) {
       activeBacklogs: student.activeBacklogs,
       totalBacklogs: student.totalBacklogs,
       placementStatus: student.placementStatus,
+      placementStage,
       bio: student.bio,
       githubUrl: student.githubUrl,
       linkedinUrl: student.linkedinUrl,
@@ -1116,3 +1120,438 @@ export async function deleteDepartment(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * Global Search across Students, Placement Drives, Departments, and System Pages
+ * GET /api/tpo/global-search?q=...
+ */
+export async function globalSearch(req, res, next) {
+  try {
+    const rawQuery = req.query.q || req.query.query || req.query.search || '';
+    const q = String(rawQuery).trim();
+
+    if (!q || q.length === 0) {
+      return sendSuccess(res, 200, 'Empty search query', {
+        query: '',
+        totalCount: 0,
+        students: [],
+        drives: [],
+        departments: [],
+        quickLinks: [],
+      });
+    }
+
+    const searchLower = q.toLowerCase();
+
+    // 1. Static/System Navigation Pages
+    const NAVIGATION_PAGES = [
+      { name: 'Dashboard', path: '/tpo/dashboard', category: 'Navigation', icon: 'LayoutDashboard', keywords: ['dashboard', 'home', 'overview', 'kpi', 'metrics', 'stats', 'funnel'] },
+      { name: 'Students Directory', path: '/tpo/students', category: 'Navigation', icon: 'Users', keywords: ['students', 'directory', 'candidates', 'profiles', 'resumes', 'batch', 'enrollment', 'cgpa', 'passwords'] },
+      { name: 'Placement Drives', path: '/tpo/placement-drives', category: 'Navigation', icon: 'Briefcase', keywords: ['drives', 'placement', 'companies', 'jobs', 'openings', 'recruitment', 'publish', 'roles'] },
+      { name: 'Departments & Branches', path: '/tpo/departments', category: 'Navigation', icon: 'Building', keywords: ['departments', 'branches', 'coordinators', 'faculties', 'cse', 'ece', 'it', 'mech', 'civil', 'aids', 'ee'] },
+      { name: 'Applications Management', path: '/tpo/applications', category: 'Navigation', icon: 'FileCheck2', keywords: ['applications', 'applied', 'shortlist', 'review', 'candidates', 'status'] },
+      { name: 'Analytics & Benchmarks', path: '/tpo/analytics', category: 'Navigation', icon: 'BarChart3', keywords: ['analytics', 'benchmarks', 'reports', 'matrix', 'equity', 'salary', 'charts', 'trends', 'ctc'] },
+      { name: 'Interview Schedules', path: '/tpo/interviews', category: 'Navigation', icon: 'CalendarClock', keywords: ['interviews', 'rounds', 'schedule', 'panels', 'meeting', 'feedback', 'technical', 'hr'] },
+      { name: 'Placement Resources', path: '/tpo/resources', category: 'Navigation', icon: 'BookOpen', keywords: ['resources', 'materials', 'question bank', 'pdf', 'guides', 'preparation', 'resumes'] },
+      { name: 'Skill Assessments', path: '/tpo/assessments', category: 'Navigation', icon: 'CheckSquare', keywords: ['assessments', 'tests', 'quizzes', 'mcq', 'coding', 'exam', 'evaluation'] },
+      { name: 'Reports & Audits', path: '/tpo/reports', category: 'Navigation', icon: 'FileText', keywords: ['reports', 'export', 'csv', 'excel', 'audits', 'downloads', 'compliance'] },
+    ];
+
+    const matchedQuickLinks = NAVIGATION_PAGES.filter(item => {
+      return (
+        item.name.toLowerCase().includes(searchLower) ||
+        item.keywords.some(k => k.includes(searchLower) || searchLower.includes(k))
+      );
+    }).slice(0, 4);
+
+    // 2. Department matching
+    const allDepts = getAllDepartmentMetadata();
+    const matchedDepts = allDepts
+      .filter(d => {
+        return (
+          d.code.toLowerCase().includes(searchLower) ||
+          d.name.toLowerCase().includes(searchLower) ||
+          (d.coordinator?.name && d.coordinator.name.toLowerCase().includes(searchLower))
+        );
+      })
+      .slice(0, 4)
+      .map(d => ({
+        code: d.code,
+        name: d.name,
+        coordinator: d.coordinator?.name || 'Unassigned',
+        path: `/tpo/departments`,
+      }));
+
+    // 3. Students Search (by roll number, first name, last name, department, email)
+    const studentsPromise = prisma.student.findMany({
+      where: {
+        OR: [
+          { rollNumber: { contains: q, mode: 'insensitive' } },
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { department: { contains: q, mode: 'insensitive' } },
+          { user: { email: { contains: q, mode: 'insensitive' } } },
+        ],
+      },
+      take: 6,
+      select: {
+        id: true,
+        rollNumber: true,
+        firstName: true,
+        lastName: true,
+        department: true,
+        batchYear: true,
+        cgpa: true,
+        placementStatus: true,
+        user: {
+          select: {
+            email: true,
+          },
+        },
+        applications: {
+          include: {
+            drive: { select: { companyName: true, jobRole: true, packageCtc: true } },
+            internship: { select: { companyName: true, roleTitle: true } },
+            interviews: {
+              select: { roundName: true, status: true },
+              orderBy: { roundNumber: 'desc' }
+            },
+            selectionResult: {
+              select: { companyName: true, offeredPackage: true }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { cgpa: 'desc' },
+        { rollNumber: 'asc' },
+      ],
+    });
+
+    // 4. Placement Drives Search (by company name, job role, location)
+    const drivesPromise = prisma.placementDrive.findMany({
+      where: {
+        OR: [
+          { companyName: { contains: q, mode: 'insensitive' } },
+          { jobRole: { contains: q, mode: 'insensitive' } },
+          { location: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      take: 6,
+      select: {
+        id: true,
+        companyName: true,
+        companyLogo: true,
+        jobRole: true,
+        packageCtc: true,
+        location: true,
+        status: true,
+        driveType: true,
+        deadline: true,
+        driveDate: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const [rawStudents, rawDrives] = await Promise.all([studentsPromise, drivesPromise]);
+
+    const formattedStudents = rawStudents.map(s => {
+      const placementStage = resolveStudentPlacementStatus(s);
+      return {
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`.trim(),
+        rollNumber: s.rollNumber,
+        department: s.department,
+        batchYear: s.batchYear,
+        cgpa: s.cgpa ? Number(s.cgpa) : null,
+        email: s.user?.email || null,
+        placementStatus: s.placementStatus,
+        placementStage,
+        path: `/tpo/students?search=${encodeURIComponent(s.rollNumber)}`,
+      };
+    });
+
+    const formattedDrives = rawDrives.map(d => ({
+      id: d.id,
+      companyName: d.companyName,
+      companyLogo: d.companyLogo,
+      jobRole: d.jobRole,
+      packageCtc: d.packageCtc ? Number(d.packageCtc) : null,
+      location: d.location,
+      status: d.status,
+      driveType: d.driveType,
+      deadline: d.deadline,
+      driveDate: d.driveDate,
+      path: `/tpo/placement-drives?search=${encodeURIComponent(d.companyName)}`,
+    }));
+
+    return sendSuccess(res, 200, 'Global search results', {
+      query: q,
+      totalCount: formattedStudents.length + formattedDrives.length + matchedDepts.length + matchedQuickLinks.length,
+      students: formattedStudents,
+      drives: formattedDrives,
+      departments: matchedDepts,
+      quickLinks: matchedQuickLinks,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Update Student Placement & Recruitment Stage (TPO Action)
+ * POST /api/tpo/students/:id/placement-status
+ */
+export async function updateStudentPlacementStatus(req, res, next) {
+  try {
+    const { id } = req.params;
+    const {
+      status,
+      statusType, // support both 'status' and 'statusType'
+      companyName, // e.g. 'Josh Technology Group'
+      packageCtc, // e.g. 12
+      stepName, // e.g. 'Technical Round'
+      jobRole, // e.g. 'Software Developer'
+    } = req.body;
+
+    const effectiveStatus = String(status || statusType || 'NOT_APPLIED').toUpperCase();
+
+    const student = await prisma.student.findUnique({
+      where: { id },
+      include: {
+        applications: {
+          include: {
+            drive: true,
+            interviews: true,
+            selectionResult: true,
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return sendError(res, 404, 'Student record not found', { code: 'STUDENT_NOT_FOUND' });
+    }
+
+    const company = (companyName || '').trim();
+    const role = (jobRole || 'Software Engineer').trim();
+    const pkg = parseFloat(packageCtc) || 0;
+    const step = (stepName || 'Technical Round').trim();
+
+    // Ensure tpoProfile exists if needed for drive creation
+    let tpoProfile = await prisma.tpoProfile.findFirst();
+    if (!tpoProfile) {
+      const tpoUser = await prisma.user.findFirst({ where: { role: 'TPO' } });
+      if (tpoUser) {
+        tpoProfile = await prisma.tpoProfile.create({
+          data: {
+            userId: tpoUser.id,
+            designation: 'Head Training & Placement Officer',
+            department: 'Training & Placement Cell',
+          },
+        }).catch(() => null);
+      }
+    }
+
+    if (effectiveStatus === 'SUCCESS') {
+      // 1. Mark as placed / Success
+      let drive = company
+        ? await prisma.placementDrive.findFirst({
+            where: { companyName: { contains: company, mode: 'insensitive' } },
+          })
+        : null;
+
+      if (!drive && company && tpoProfile) {
+        drive = await prisma.placementDrive.create({
+          data: {
+            tpoId: tpoProfile.id,
+            companyName: company,
+            jobRole: role,
+            jobDescription: `Placement recruitment for ${company}`,
+            packageCtc: pkg > 0 ? pkg : 10,
+            location: 'Main Campus / Corporate HQ',
+            eligibleBranches: ['ALL'],
+            eligibleBatch: student.batchYear,
+            deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            status: 'COMPLETED',
+          },
+        }).catch(() => null);
+      }
+
+      let application = student.applications.find(
+        (a) =>
+          (drive && a.driveId === drive.id) ||
+          (company && a.drive?.companyName?.toLowerCase() === company.toLowerCase())
+      );
+
+      if (application) {
+        application = await prisma.application.update({
+          where: { id: application.id },
+          data: {
+            status: 'SELECTED',
+            stepStatus: 'CLEARED',
+          },
+        });
+      } else if (drive) {
+        application = await prisma.application.create({
+          data: {
+            studentId: student.id,
+            driveId: drive.id,
+            status: 'SELECTED',
+            stepStatus: 'CLEARED',
+          },
+        });
+      }
+
+      if (application) {
+        await prisma.selectionResult.upsert({
+          where: { applicationId: application.id },
+          update: {
+            companyName: company || drive?.companyName || 'Campus Recruit',
+            offeredPackage: pkg > 0 ? pkg : (drive?.packageCtc || 10),
+            isAccepted: true,
+          },
+          create: {
+            applicationId: application.id,
+            companyName: company || drive?.companyName || 'Campus Recruit',
+            offeredPackage: pkg > 0 ? pkg : (drive?.packageCtc || 10),
+            offerDate: new Date(),
+            isAccepted: true,
+          },
+        });
+      }
+
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { placementStatus: true },
+      });
+    } else if (effectiveStatus === 'PROCESSING') {
+      // 2. Set to Processing with specific active step (e.g. Technical Round in Josh)
+      let drive = company
+        ? await prisma.placementDrive.findFirst({
+            where: { companyName: { contains: company, mode: 'insensitive' } },
+          })
+        : null;
+
+      if (!drive && company && tpoProfile) {
+        drive = await prisma.placementDrive.create({
+          data: {
+            tpoId: tpoProfile.id,
+            companyName: company,
+            jobRole: role,
+            jobDescription: `Recruitment drive for ${company}`,
+            packageCtc: pkg > 0 ? pkg : 10,
+            location: 'Campus Recruitment',
+            eligibleBranches: ['ALL'],
+            eligibleBatch: student.batchYear,
+            deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            status: 'ACTIVE',
+          },
+        }).catch(() => null);
+      }
+
+      let application = student.applications.find(
+        (a) =>
+          (drive && a.driveId === drive.id) ||
+          (company && a.drive?.companyName?.toLowerCase() === company.toLowerCase())
+      );
+
+      if (application) {
+        if (application.selectionResult) {
+          await prisma.selectionResult.delete({
+            where: { applicationId: application.id },
+          }).catch(() => {});
+        }
+        application = await prisma.application.update({
+          where: { id: application.id },
+          data: {
+            status: 'INTERVIEW',
+            stepStatus: 'IN_PROGRESS',
+            currentStep: 3,
+          },
+        });
+      } else if (drive) {
+        application = await prisma.application.create({
+          data: {
+            studentId: student.id,
+            driveId: drive.id,
+            status: 'INTERVIEW',
+            stepStatus: 'IN_PROGRESS',
+            currentStep: 3,
+          },
+        });
+      }
+
+      if (application) {
+        const existingInterview = await prisma.interview.findFirst({
+          where: { applicationId: application.id },
+        });
+
+        if (existingInterview) {
+          await prisma.interview.update({
+            where: { id: existingInterview.id },
+            data: {
+              roundName: step,
+              status: 'SCHEDULED',
+            },
+          });
+        } else {
+          await prisma.interview.create({
+            data: {
+              applicationId: application.id,
+              roundNumber: 2,
+              roundName: step,
+              scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+              status: 'SCHEDULED',
+              venueOrLink: 'Campus Interview Panel / Online Meet',
+            },
+          });
+        }
+      }
+
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { placementStatus: false },
+      });
+    } else if (status === 'NOT_APPLIED') {
+      // 3. Reset to Not Applied
+      for (const app of student.applications) {
+        if (app.selectionResult) {
+          await prisma.selectionResult.delete({ where: { applicationId: app.id } }).catch(() => {});
+        }
+        await prisma.interview.deleteMany({ where: { applicationId: app.id } }).catch(() => {});
+        await prisma.application.delete({ where: { id: app.id } }).catch(() => {});
+      }
+
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { placementStatus: false },
+      });
+    }
+
+    const updatedStudent = await prisma.student.findUnique({
+      where: { id },
+      include: {
+        applications: {
+          include: {
+            drive: true,
+            internship: true,
+            interviews: true,
+            selectionResult: true,
+          },
+        },
+      },
+    });
+
+    const placementStage = resolveStudentPlacementStatus(updatedStudent);
+
+    return sendSuccess(res, 200, `Student recruitment status updated to ${placementStage.statusLabel}`, {
+      studentId: student.id,
+      placementStatus: updatedStudent.placementStatus,
+      placementStage,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+

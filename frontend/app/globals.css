@@ -112,6 +112,16 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Guaranteed 100% solid, non-transparent search surface */
+  .search-popover-surface {
+    background-color: #ffffff !important;
+    opacity: 1 !important;
+  }
+  .dark .search-popover-surface {
+    background-color: #0c0d0e !important;
+    opacity: 1 !important;
+  }
 }
 
 /* ─── Official shadcn Documentation & Typeset System ─── */

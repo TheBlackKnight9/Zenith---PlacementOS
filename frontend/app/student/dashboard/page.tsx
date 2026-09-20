@@ -98,11 +98,25 @@ interface RecommendedAction {
   badge: string;
 }
 
+export interface PlacementStageInfo {
+  statusType: "SUCCESS" | "PROCESSING" | "NOT_APPLIED";
+  statusLabel: "Success" | "Processing" | "Not Applied";
+  companyName: string | null;
+  jobRole: string | null;
+  stepName: string | null;
+  detailText: string;
+  packageCtc: number | null;
+  offerDate?: string | null;
+  totalApplications: number;
+  activeApplications: number;
+}
+
 interface StudentDashboardStats {
   eligibleDrivesCount: number;
   appliedCount: number;
   upcomingInterviewsCount: number;
   placementStatus: boolean;
+  placementStage?: PlacementStageInfo;
   growthThisMonth: {
     eligible: number;
     applications: number;
@@ -206,17 +220,59 @@ export default function StudentDashboardPage() {
           sparkType="wave"
           sparkColor="#f97316"
         />
-        <KpiCard
-          label="Placement Status"
-          value={s?.placementStatus ? "Placed 🎉" : "In Progress"}
-          growth={0}
-          growthLabel="Dream Tier Eligible ↗"
-          iconBg="bg-sky-50"
-          iconColor="text-sky-600"
-          icon={<Award className="h-5 w-5" />}
-          sparkType="wave"
-          sparkColor="#0284c7"
-        />
+        {/* KPI 4: Synchronized Recruitment & Placement Status */}
+        {(() => {
+          const stage = s?.placementStage;
+          const statusType =
+            stage?.statusType ||
+            (s?.placementStatus ? "SUCCESS" : (s?.appliedCount || 0) > 0 ? "PROCESSING" : "NOT_APPLIED");
+
+          if (statusType === "SUCCESS") {
+            return (
+              <KpiCard
+                label="Placement Status"
+                value="Success 🎉"
+                growth={0}
+                growthLabel={stage?.detailText || stage?.companyName || "Placed"}
+                iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+                iconColor="text-emerald-600 dark:text-emerald-400"
+                icon={<Award className="h-5 w-5" />}
+                sparkType="wave"
+                sparkColor="#10b981"
+              />
+            );
+          }
+
+          if (statusType === "PROCESSING") {
+            return (
+              <KpiCard
+                label="Recruitment Status"
+                value="Processing ⏳"
+                growth={0}
+                growthLabel={stage?.detailText || "In Pipeline"}
+                iconBg="bg-blue-50 dark:bg-blue-950/40"
+                iconColor="text-blue-600 dark:text-blue-400"
+                icon={<Clock className="h-5 w-5" />}
+                sparkType="wave"
+                sparkColor="#0284c7"
+              />
+            );
+          }
+
+          return (
+            <KpiCard
+              label="Recruitment Status"
+              value="Not Applied"
+              growth={0}
+              growthLabel="0 Applications"
+              iconBg="bg-slate-50 dark:bg-slate-900/40"
+              iconColor="text-slate-500"
+              icon={<Briefcase className="h-5 w-5" />}
+              sparkType="wave"
+              sparkColor="#94a3b8"
+            />
+          );
+        })()}
       </div>
 
       {/* ─── Rows 2-4: 2-Column Split Layout ─── */}

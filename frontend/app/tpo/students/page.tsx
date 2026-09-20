@@ -103,6 +103,19 @@ import { useDepartment } from "@/contexts/DepartmentContext";
 import { cn } from "@/lib/utils";
 
 /* ─── Interfaces ─── */
+export interface PlacementStageInfo {
+  statusType: "SUCCESS" | "PROCESSING" | "NOT_APPLIED";
+  statusLabel: "Success" | "Processing" | "Not Applied";
+  companyName: string | null;
+  jobRole: string | null;
+  stepName: string | null;
+  detailText: string;
+  packageCtc: number | null;
+  offerDate?: string | null;
+  totalApplications: number;
+  activeApplications: number;
+}
+
 interface StudentListItem {
   id: string;
   rollNumber: string;
@@ -118,6 +131,7 @@ interface StudentListItem {
   activeBacklogs: number;
   totalBacklogs: number;
   placementStatus: boolean;
+  placementStage?: PlacementStageInfo;
   skills: string[];
   applicationsCount: number;
 }
@@ -192,8 +206,20 @@ export default function StudentsDirectoryPage() {
   const [selectedDept, setSelectedDept] = useState("ALL");
   const [minCgpa, setMinCgpa] = useState("");
   const [zeroBacklogsOnly, setZeroBacklogsOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  // Manage Status Modal State
+  const [isManageStatusOpen, setIsManageStatusOpen] = useState(false);
+  const [statusTargetStudent, setStatusTargetStudent] = useState<StudentListItem | StudentDetailData | null>(null);
+  const [manageStatusType, setManageStatusType] = useState<"SUCCESS" | "PROCESSING" | "NOT_APPLIED">("SUCCESS");
+  const [manageStatusCompany, setManageStatusCompany] = useState("Josh Technology Group");
+  const [manageStatusPackage, setManageStatusPackage] = useState("12");
+  const [manageStatusStep, setManageStatusStep] = useState("Technical Round");
+  const [manageStatusRole, setManageStatusRole] = useState("Software Developer");
+  const [isSubmittingStatus, setIsSubmittingStatus] = useState(false);
+  const [manageStatusError, setManageStatusError] = useState("");
 
   // Table Sorting, Visibility & Selection States (shadcn Data Table)
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -282,6 +308,7 @@ export default function StudentsDirectoryPage() {
       if (selectedDept !== "ALL") params.set("department", selectedDept);
       if (minCgpa) params.set("minCgpa", minCgpa);
       if (zeroBacklogsOnly) params.set("maxBacklogs", "0");
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
       params.set("page", String(page));
       params.set("limit", String(pageSize));
 
@@ -297,7 +324,7 @@ export default function StudentsDirectoryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, selectedDept, minCgpa, zeroBacklogsOnly, page, pageSize]);
+  }, [search, selectedDept, minCgpa, zeroBacklogsOnly, statusFilter, page, pageSize]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -305,6 +332,30 @@ export default function StudentsDirectoryPage() {
     }, 250);
     return () => clearTimeout(timer);
   }, [loadStudents]);
+
+  // Sync search with URL parameter or tpo:search event from GlobalSearch
+  useEffect(() => {
+    const handleSearchEvent = (e: any) => {
+      if (e.detail !== undefined) {
+        setSearch(e.detail);
+        setPage(1);
+      }
+    };
+    window.addEventListener("tpo:search", handleSearchEvent);
+
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const searchParam = urlParams.get("search") || urlParams.get("q");
+      if (searchParam) {
+        setSearch(searchParam);
+        setPage(1);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("tpo:search", handleSearchEvent);
+    };
+  }, []);
 
   // Load Single Student Detailed Data for Slide-Over Sheet
   const openStudentDetail = useCallback(
@@ -326,6 +377,47 @@ export default function StudentsDirectoryPage() {
     },
     [students]
   );
+
+  // Manage Recruitment Status Handler
+  const handleOpenManageStatus = useCallback((student: StudentListItem | StudentDetailData) => {
+    setStatusTargetStudent(student);
+    const stage = student.placementStage;
+    const currentType: "SUCCESS" | "PROCESSING" | "NOT_APPLIED" =
+      stage?.statusType || (student.placementStatus ? "SUCCESS" : (student as any).applicationsCount > 0 ? "PROCESSING" : "NOT_APPLIED");
+    setManageStatusType(currentType);
+    setManageStatusCompany(stage?.companyName || "Josh Technology Group");
+    setManageStatusPackage(stage?.packageCtc ? String(stage.packageCtc) : "12");
+    setManageStatusStep(stage?.stepName || "Technical Round");
+    setManageStatusRole(stage?.jobRole || "Software Developer");
+    setManageStatusError("");
+    setIsManageStatusOpen(true);
+  }, []);
+
+  const handleUpdateStatusSubmit = async () => {
+    if (!statusTargetStudent) return;
+    setIsSubmittingStatus(true);
+    setManageStatusError("");
+    try {
+      await apiClient.post(`/tpo/students/${statusTargetStudent.id}/placement-status`, {
+        statusType: manageStatusType,
+        companyName: manageStatusCompany.trim(),
+        jobRole: manageStatusRole.trim(),
+        packageCtc: parseFloat(manageStatusPackage) || 0,
+        stepName: manageStatusStep.trim(),
+      });
+
+      if (activeStudentId === statusTargetStudent.id) {
+        await openStudentDetail(statusTargetStudent.id);
+      }
+      await loadStudents();
+      setIsManageStatusOpen(false);
+    } catch (err: any) {
+      console.error("Failed to update recruitment status:", err);
+      setManageStatusError(err.message || "Failed to update recruitment status");
+    } finally {
+      setIsSubmittingStatus(false);
+    }
+  };
 
   // TanStack Table Column Definitions (Official shadcn Data Table)
   const columns: ColumnDef<StudentListItem>[] = useMemo(
@@ -367,16 +459,54 @@ export default function StudentsDirectoryPage() {
           </Button>
         ),
         cell: ({ row }) => {
-          const placed = Boolean(row.getValue("placementStatus"));
+          const s = row.original;
+          const stage = s.placementStage;
+          const statusType =
+            stage?.statusType ||
+            (s.placementStatus ? "SUCCESS" : s.applicationsCount > 0 ? "PROCESSING" : "NOT_APPLIED");
+
+          if (statusType === "SUCCESS") {
+            return (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                  Success
+                </span>
+                <span
+                  className="text-[11px] text-muted-foreground max-w-[180px] truncate"
+                  title={stage?.detailText || stage?.companyName || "Placed"}
+                >
+                  {stage?.detailText || stage?.companyName || "Placed"}
+                </span>
+              </div>
+            );
+          }
+
+          if (statusType === "PROCESSING") {
+            return (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+                  Processing
+                </span>
+                <span
+                  className="text-[11px] text-muted-foreground max-w-[180px] truncate"
+                  title={stage?.detailText || "In Pipeline"}
+                >
+                  {stage?.detailText || "In Pipeline"}
+                </span>
+              </div>
+            );
+          }
+
           return (
-            <span
-              className={cn(
-                "text-sm font-medium",
-                placed ? "text-emerald-500" : "text-muted-foreground"
-              )}
-            >
-              {placed ? "Success" : "Processing"}
-            </span>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-slate-400 shrink-0" />
+                Not Applied
+              </span>
+              <span className="text-[11px] text-muted-foreground">0 Applications</span>
+            </div>
           );
         },
       },
@@ -532,6 +662,13 @@ export default function StudentsDirectoryPage() {
                     View Student
                   </DropdownMenuItem>
                   <DropdownMenuItem
+                    onClick={() => handleOpenManageStatus(student)}
+                    className="text-xs cursor-pointer gap-2 text-primary font-medium focus:text-primary"
+                  >
+                    <Briefcase className="h-3.5 w-3.5 text-primary" />
+                    Manage Status
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={() => navigator.clipboard.writeText(student.email)}
                     className="text-xs cursor-pointer gap-2"
                   >
@@ -560,7 +697,7 @@ export default function StudentsDirectoryPage() {
         },
       },
     ],
-    [openStudentDetail, handleDeleteSingleStudent]
+    [openStudentDetail, handleDeleteSingleStudent, handleOpenManageStatus]
   );
 
   // Initialize TanStack React Table
@@ -1085,6 +1222,7 @@ export default function StudentsDirectoryPage() {
     setSelectedDepartment("All Departments");
     setMinCgpa("");
     setZeroBacklogsOnly(false);
+    setStatusFilter("ALL");
     setPage(1);
   };
 
@@ -1119,6 +1257,33 @@ export default function StudentsDirectoryPage() {
 
             {/* Quick Filters + Add Student with Dropdown */}
             <div className="flex flex-wrap items-center gap-2">
+              {/* Recruitment Status Filter */}
+              <Select
+                value={statusFilter}
+                onValueChange={(val) => {
+                  setStatusFilter(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[135px] text-xs bg-background border-input font-medium">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs font-medium">
+                    All Statuses
+                  </SelectItem>
+                  <SelectItem value="SUCCESS" className="text-xs text-emerald-600 font-medium">
+                    Success (Placed)
+                  </SelectItem>
+                  <SelectItem value="PROCESSING" className="text-xs text-blue-600 font-medium">
+                    Processing
+                  </SelectItem>
+                  <SelectItem value="NOT_APPLIED" className="text-xs text-muted-foreground font-medium">
+                    Not Applied
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
               {/* CGPA Select */}
               <Select
                 value={minCgpa || "ALL"}
@@ -1286,7 +1451,7 @@ export default function StudentsDirectoryPage() {
               </Button>
             ))}
 
-            {(search || selectedDept !== "ALL" || minCgpa || zeroBacklogsOnly) && (
+            {(search || selectedDept !== "ALL" || minCgpa || zeroBacklogsOnly || statusFilter !== "ALL") && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -1552,10 +1717,21 @@ export default function StudentsDirectoryPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {studentDetail.placementStatus ? (
-                    <Badge variant="success">Placed Candidate</Badge>
+                  {(studentDetail.placementStage?.statusType === "SUCCESS" || studentDetail.placementStatus) ? (
+                    <Badge variant="success" className="gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      Success (Placed)
+                    </Badge>
+                  ) : (studentDetail.placementStage?.statusType === "PROCESSING" || (studentDetail.applications?.length || 0) > 0) ? (
+                    <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+                      Processing ({studentDetail.placementStage?.stepName || "In Pipeline"})
+                    </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-muted-foreground">Active Seeking</Badge>
+                    <Badge variant="outline" className="text-muted-foreground gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+                      Not Applied
+                    </Badge>
                   )}
                   <Badge variant="outline">CGPA: {studentDetail.cgpa.toFixed(2)}</Badge>
                   {studentDetail.activeBacklogs === 0 ? (
@@ -1572,6 +1748,129 @@ export default function StudentsDirectoryPage() {
 
               {/* Tabs Content */}
               <div className="p-6 flex-1 overflow-y-auto space-y-5">
+                {/* Recruitment Status Hero Banner */}
+                {(() => {
+                  const stage = studentDetail.placementStage;
+                  const statusType =
+                    stage?.statusType ||
+                    (studentDetail.placementStatus
+                      ? "SUCCESS"
+                      : (studentDetail.applications?.length || 0) > 0
+                      ? "PROCESSING"
+                      : "NOT_APPLIED");
+
+                  if (statusType === "SUCCESS") {
+                    return (
+                      <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-950/20 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="h-9 w-9 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <Award className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">
+                                Placement Status: Success (Placed)
+                              </span>
+                              <Badge className="bg-emerald-500 text-white text-[10px] h-5 px-1.5">
+                                Offer Selected
+                              </Badge>
+                            </div>
+                            <h4 className="text-sm font-bold text-foreground mt-1">
+                              {stage?.companyName || "Placed Candidate"}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {stage?.jobRole || "Role Confirmed"}
+                              {stage?.packageCtc ? ` • CTC: ₹${stage.packageCtc} LPA` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenManageStatus(studentDetail)}
+                          className="text-xs h-8 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 shrink-0 gap-1.5"
+                        >
+                          <Briefcase className="h-3.5 w-3.5" />
+                          Manage Status
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  if (statusType === "PROCESSING") {
+                    return (
+                      <div className="p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 dark:bg-blue-950/20 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="h-9 w-9 rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <Clock className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">
+                                Recruitment Status: Processing
+                              </span>
+                              <Badge className="bg-blue-500 text-white text-[10px] h-5 px-1.5">
+                                In Pipeline
+                              </Badge>
+                            </div>
+                            <h4 className="text-sm font-bold text-foreground mt-1">
+                              {stage?.stepName || "Active Selection Round"} • {stage?.companyName || "Company Drive"}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {stage?.jobRole || "Candidate actively moving through recruitment stages"}
+                              {stage?.activeApplications ? ` (${stage.activeApplications} active processes)` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenManageStatus(studentDetail)}
+                          className="text-xs h-8 border-blue-500/30 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 shrink-0 gap-1.5"
+                        >
+                          <Briefcase className="h-3.5 w-3.5" />
+                          Manage Status
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-4 rounded-xl border border-border bg-muted/40 flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
+                          <AlertCircle className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                              Recruitment Status: Not Applied
+                            </span>
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground">
+                              0 Applications
+                            </Badge>
+                          </div>
+                          <h4 className="text-sm font-medium text-foreground mt-1">
+                            Candidate has not applied to any recruitment drives yet
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Eligible to apply for open campus drives and internship listings.
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenManageStatus(studentDetail)}
+                        className="text-xs h-8 text-foreground shrink-0 gap-1.5"
+                      >
+                        <Briefcase className="h-3.5 w-3.5" />
+                        Manage Status
+                      </Button>
+                    </div>
+                  );
+                })()}
+
                 <Tabs defaultValue="overview" className="w-full">
                   <TabsList className="grid grid-cols-3 w-full">
                     <TabsTrigger value="overview" className="text-xs">
@@ -2525,6 +2824,221 @@ export default function StudentsDirectoryPage() {
                   {deleteTarget?.type === "bulk"
                     ? `Remove ${deleteTarget.students?.length} Students`
                     : "Remove Student"}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Manage Recruitment Status Dialog ─── */}
+      <Dialog
+        open={isManageStatusOpen}
+        onOpenChange={(open) => {
+          if (!isSubmittingStatus) {
+            setIsManageStatusOpen(open);
+            if (!open) {
+              setStatusTargetStudent(null);
+              setManageStatusError("");
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Briefcase className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Update Recruitment Status
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Configure real-time placement and pipeline progress for student
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {statusTargetStudent && (
+            <div className="space-y-4 py-2">
+              {/* Target Student Header Card */}
+              <div className="p-3 rounded-lg border border-border bg-muted/40 flex items-center justify-between text-xs">
+                <div>
+                  <div className="font-semibold text-foreground text-sm">
+                    {statusTargetStudent.name}
+                  </div>
+                  <div className="text-muted-foreground font-mono text-[11px] mt-0.5">
+                    {statusTargetStudent.rollNumber} • {statusTargetStudent.department}
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  CGPA {typeof statusTargetStudent.cgpa === "number" ? statusTargetStudent.cgpa.toFixed(2) : statusTargetStudent.cgpa}
+                </Badge>
+              </div>
+
+              {manageStatusError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{manageStatusError}</span>
+                </div>
+              )}
+
+              {/* Status Type Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">
+                  Recruitment Status Tier <span className="text-destructive">*</span>
+                </label>
+                <Select
+                  value={manageStatusType}
+                  onValueChange={(val: "SUCCESS" | "PROCESSING" | "NOT_APPLIED") => setManageStatusType(val)}
+                >
+                  <SelectTrigger className="w-full text-xs">
+                    <SelectValue placeholder="Select recruitment status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SUCCESS" className="text-xs text-emerald-600 font-medium">
+                      Success (Placed Candidate)
+                    </SelectItem>
+                    <SelectItem value="PROCESSING" className="text-xs text-blue-600 font-medium">
+                      Processing (Active in Pipeline)
+                    </SelectItem>
+                    <SelectItem value="NOT_APPLIED" className="text-xs text-muted-foreground font-medium">
+                      Not Applied (0 Applications)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Dynamic Fields Based on Status Type */}
+              {manageStatusType === "SUCCESS" && (
+                <div className="space-y-3 p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
+                  <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Placement Offer Details
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground">Company Name</label>
+                    <Input
+                      value={manageStatusCompany}
+                      onChange={(e) => setManageStatusCompany(e.target.value)}
+                      placeholder="e.g. Josh Technology Group"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground">Job Role</label>
+                      <Input
+                        value={manageStatusRole}
+                        onChange={(e) => setManageStatusRole(e.target.value)}
+                        placeholder="e.g. Software Developer"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground">Package (LPA)</label>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        value={manageStatusPackage}
+                        onChange={(e) => setManageStatusPackage(e.target.value)}
+                        placeholder="e.g. 12"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {manageStatusType === "PROCESSING" && (
+                <div className="space-y-3 p-3.5 rounded-xl border border-blue-500/30 bg-blue-500/5">
+                  <div className="text-[11px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" /> Pipeline Progress Stage
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground">Company Name</label>
+                    <Input
+                      value={manageStatusCompany}
+                      onChange={(e) => setManageStatusCompany(e.target.value)}
+                      placeholder="e.g. Josh Technology Group"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground">Current Step / Round</label>
+                      <Input
+                        value={manageStatusStep}
+                        onChange={(e) => setManageStatusStep(e.target.value)}
+                        placeholder="e.g. Technical Round"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground">Target Role</label>
+                      <Input
+                        value={manageStatusRole}
+                        onChange={(e) => setManageStatusRole(e.target.value)}
+                        placeholder="e.g. Software Developer"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    This step and company will be displayed in the student&apos;s status column, sheet, and profile.
+                  </p>
+                </div>
+              )}
+
+              {manageStatusType === "NOT_APPLIED" && (
+                <div className="p-3.5 rounded-xl border border-border bg-muted/40 space-y-1.5 text-xs text-muted-foreground">
+                  <div className="font-semibold text-foreground flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                    Reset to Not Applied
+                  </div>
+                  <p className="text-[11px]">
+                    This will clear any active placement offer flags or interview rounds for this student.
+                    The student will be displayed as <strong>Not Applied (0 Applications)</strong>.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsManageStatusOpen(false);
+                setStatusTargetStudent(null);
+                setManageStatusError("");
+              }}
+              disabled={isSubmittingStatus}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleUpdateStatusSubmit}
+              disabled={isSubmittingStatus}
+              className="text-xs gap-1.5"
+            >
+              {isSubmittingStatus ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  Updating Status...
+                </>
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Save Recruitment Status
                 </>
               )}
             </Button>

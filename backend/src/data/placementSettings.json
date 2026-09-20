@@ -1,0 +1,20 @@
+{
+  "institutionName": "PlacementOS Institute of Technology & Management",
+  "aisheCode": "C-45892",
+  "academicCycle": "2026-27",
+  "activeBatchYear": 2027,
+  "letterheadPrefix": "TPO/ACCRED/2026",
+  "minCgpaDefault": 6.5,
+  "allowActiveBacklogs": false,
+  "maxApplicationsPerStudent": 5,
+  "dreamJobPolicy": true,
+  "dreamThresholdLpa": 20,
+  "requireProfileVerification": true,
+  "autoShortlistThreshold": 70,
+  "notifications": {
+    "emailOnNewApplication": true,
+    "emailOnInterviewScheduled": true,
+    "emailOnOfferAccepted": true,
+    "weeklyDigest": true
+  }
+}

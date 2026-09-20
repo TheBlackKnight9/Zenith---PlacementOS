@@ -830,28 +830,40 @@ export default function TpoReportsPage() {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Campus Placement %</span>
-                    <div className="text-xl font-black text-foreground">84.6%</div>
-                    <p className="text-[11px] text-muted-foreground">478 placed of 565 eligible graduates</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Peak Compensation</span>
-                    <div className="text-xl font-black text-primary">₹44.5 LPA</div>
-                    <p className="text-[11px] text-muted-foreground">Amazon Development Centre (SDE-1)</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Institutional Median</span>
-                    <div className="text-xl font-black text-foreground">₹9.2 LPA</div>
-                    <p className="text-[11px] text-muted-foreground">Highest median salary in university history</p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Recruiter Footprint</span>
-                    <div className="text-xl font-black text-foreground">68 Companies</div>
-                    <p className="text-[11px] text-muted-foreground">24 Tier-1 Product & 44 Core/IT</p>
-                  </div>
-                </div>
+                {(() => {
+                  const totalCandidates = naacRows.length + unplacedRows.length;
+                  const placementPct = totalCandidates > 0 ? ((naacRows.length / totalCandidates) * 100).toFixed(1) : "0.0";
+                  const packages = naacRows.map(r => r.packageLpa).filter(p => p > 0);
+                  const maxPkg = packages.length > 0 ? Math.max(...packages) : 0;
+                  const topCompany = naacRows.find(r => r.packageLpa === maxPkg)?.employerName || "N/A";
+                  const medianSalary = nirfRows[0]?.medianSalaryLpa || (maxPkg > 0 ? `₹${maxPkg.toFixed(1)} LPA` : "₹0.0 LPA");
+                  const uniqueRecruiters = new Set(naacRows.map(r => r.employerName)).size;
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">Campus Placement %</span>
+                        <div className="text-xl font-black text-foreground">{placementPct}%</div>
+                        <p className="text-[11px] text-muted-foreground">{naacRows.length} placed of {totalCandidates} students</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">Peak Compensation</span>
+                        <div className="text-xl font-black text-primary">{maxPkg > 0 ? `₹${maxPkg} LPA` : "₹0.0 LPA"}</div>
+                        <p className="text-[11px] text-muted-foreground">{topCompany}</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">Institutional Median</span>
+                        <div className="text-xl font-black text-foreground">{medianSalary}</div>
+                        <p className="text-[11px] text-muted-foreground">Certified institutional median</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/60 space-y-1">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase">Recruiter Footprint</span>
+                        <div className="text-xl font-black text-foreground">{uniqueRecruiters} Companies</div>
+                        <p className="text-[11px] text-muted-foreground">{naacRows.length} total placement offers extended</p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="pt-2 text-xs text-muted-foreground leading-relaxed">
                   The complete certified Board Dossier includes audited CTC percentiles, departmental HOD achievements, dream-offer conversion ratios, and corporate recruiter feedback scorecards. Click <strong>Official Letterhead Preview</strong> above to render the printable document.
@@ -997,52 +1009,60 @@ export default function TpoReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {archive.map((item) => (
-                  <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
-                    <TableCell className="px-5 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
-                        <span className="font-bold text-xs text-foreground font-mono">
-                          {item.title}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-xs text-muted-foreground font-medium">
-                      {item.template}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5">
-                      <Badge variant="outline" className="text-[10px] font-bold">
-                        {item.department} ({item.batchYear})
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-center font-bold text-xs text-foreground">
-                      {item.recordCount}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-center text-xs text-muted-foreground font-medium">
-                      {item.fileSize}
-                    </TableCell>
-                    <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">
-                      {new Date(item.generatedAt).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setLetterheadModalOpen(true)}
-                        className="h-7 px-2 text-xs gap-1 hover:text-primary"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>View</span>
-                      </Button>
+                {archive.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-10 text-xs text-muted-foreground">
+                      No compliance reports generated yet. Click &quot;Custom Report Generator&quot; above to generate and archive official reports.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  archive.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
+                      <TableCell className="px-5 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
+                          <span className="font-bold text-xs text-foreground font-mono">
+                            {item.title}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5 text-xs text-muted-foreground font-medium">
+                        {item.template}
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5">
+                        <Badge variant="outline" className="text-[10px] font-bold">
+                          {item.department} ({item.batchYear})
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5 text-center font-bold text-xs text-foreground">
+                        {item.recordCount}
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5 text-center text-xs text-muted-foreground font-medium">
+                        {item.fileSize}
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-xs text-muted-foreground">
+                        {new Date(item.generatedAt).toLocaleString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </TableCell>
+                      <TableCell className="px-4 py-3.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setLetterheadModalOpen(true)}
+                          className="h-7 px-2 text-xs gap-1 hover:text-primary"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>View</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
